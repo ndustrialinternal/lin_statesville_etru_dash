@@ -108,13 +108,25 @@
   <div class="dashboard-container">
     <h1>Lineage - Statesville eTRU Metrics</h1>
 
-    <div class="facilitySelectorCommonComponent" style="margin-bottom: 1rem;">
-      <label for="minDate">Start Date:</label>
-      <input type="date" id="minDate" />
-
-      <label for="endDate" style="margin-left: 1rem;">End Date:</label>
-      <input type="date" id="endDate" />
-    </div>
+  <div class="facilitySelectorCommonComponent" style="margin-bottom: 1rem;">
+  <label for="dateRange">Date Range:</label>
+  <select id="dateRange" style="padding: 0.5rem; font-size: 1rem; border-radius: 6px; border: 1px solid #dbe2ea;">
+    <option value="last-month">Last Month</option>
+    <option value="this-month">This Month</option>
+    <option value="last-7-days">Last 7 Days</option>
+    <option value="last-30-days">Last 30 Days</option>
+    <option value="last-90-days">Last 90 Days</option>
+    <option value="ytd">Year to Date</option>
+    <option value="custom">Custom Range</option>
+  </select>
+  
+  <div id="customDateInputs" style="display: none; margin-left: 1rem;">
+    <label for="customStart">From:</label>
+    <input type="date" id="customStart" style="margin-left: 0.5rem; padding: 0.5rem;" />
+    <label for="customEnd" style="margin-left: 1rem;">To:</label>
+    <input type="date" id="customEnd" style="margin-left: 0.5rem; padding: 0.5rem;" />
+  </div>
+</div>
 
    <div class="card-container">
   <div class="metric-card">
@@ -159,233 +171,184 @@
   </div>
 </div>
 
-  <script>
-    const minDateInput = document.getElementById('minDate');
-    const endDateInput = document.getElementById('endDate');
+<script>
+  const dateRangeSelect = document.getElementById('dateRange');
+  const customDateInputs = document.getElementById('customDateInputs');
+  const customStartInput = document.getElementById('customStart');
+  const customEndInput = document.getElementById('customEnd');
+
+  const now = new Date();
+  const todayStr = now.toISOString().split('T')[0];
+
+  // Set max dates for custom inputs
+  customStartInput.max = todayStr;
+  customEndInput.max = todayStr;
+
+  let lineChart;
+
+  // Function to calculate date range based on selection
+  function getDateRange(rangeType) {
     const now = new Date();
-    const startOfLastMonth = new Date(now.getFullYear(), now.getMonth() - 1, 1);
-    const endOfLastMonth = new Date(now.getFullYear(), now.getMonth(), 0);
-    const startStr = startOfLastMonth.toISOString().split('T')[0];
-    const endStr = endOfLastMonth.toISOString().split('T')[0];
-    const todayStr = now.toISOString().split('T')[0];
+    let startDate, endDate;
 
-    minDateInput.min = "2020-01-01";
-    minDateInput.max = todayStr;
-    minDateInput.value = startStr;
-
-    endDateInput.min = startStr;
-    endDateInput.max = todayStr;
-    endDateInput.value = endStr;
-
-    let lineChart;
-
-function fetchMetrics(startDateStr, endDateStr) {
-  const isoStart = startDateStr;
-  const isoEnd = endDateStr;
-
-  const trailerQuery = `
-    query($filter: TrailerAppointmentFilter, $parkSessionFilter: ParkSessionFilter) {
-      trailerAppointments(filter: $filter) {
-        nodes {
-          checkinTime
-          trailer {
-            carrierCode
-            supportEtru
-            parkSessions(filter: $parkSessionFilter) {
-              nodes {
-                startTime
-                endTime
-                space {
-                  etruEnabled
-                  spaceCategory {
-                    name
-                  }
-                }
-              }
-            }
-          }
-        }
-      }
+    switch(rangeType) {
+      case 'last-month':
+        startDate = new Date(now.getFullYear(), now.getMonth() - 1, 1);
+        endDate = new Date(now.getFullYear(), now.getMonth(), 0);
+        break;
+      
+      case 'this-month':
+        startDate = new Date(now.getFullYear(), now.getMonth(), 1);
+        endDate = new Date(now.getFullYear(), now.getMonth() + 1, 0);
+        break;
+      
+      case 'last-7-days':
+        endDate = new Date(now);
+        startDate = new Date(now);
+        startDate.setDate(startDate.getDate() - 7);
+        break;
+      
+      case 'last-30-days':
+        endDate = new Date(now);
+        startDate = new Date(now);
+        startDate.setDate(startDate.getDate() - 30);
+        break;
+      
+      case 'last-90-days':
+        endDate = new Date(now);
+        startDate = new Date(now);
+        startDate.setDate(startDate.getDate() - 90);
+        break;
+      
+      case 'ytd':
+        startDate = new Date(now.getFullYear(), 0, 1);
+        endDate = new Date(now);
+        break;
+      
+      case 'custom':
+        // Return null to indicate custom dates should be used
+        return null;
+      
+      default:
+        // Default to last month
+        startDate = new Date(now.getFullYear(), now.getMonth() - 1, 1);
+        endDate = new Date(now.getFullYear(), now.getMonth(), 0);
     }
-  `;
 
-  // Trailer Metrics
-  fetch('https://lin-statesville-etru-dash-proxy.onrender.com/proxy', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      query: trailerQuery,
-      variables: {
-        filter: {
-          checkinTime: { greaterThan: isoStart, lessThanOrEqualTo: isoEnd }
-        },
-        parkSessionFilter: {
-          startTime: { greaterThan: isoStart }
-        }
-      }
-    })
-  })
-  .then(res => res.json())
-  .then(data => {
-    const trailers = data?.data?.trailerAppointments?.nodes || [];
-    const supportEtruCount = trailers.filter(t => t.trailer?.supportEtru).length;
-    document.getElementById('count1').textContent = supportEtruCount;
+    return {
+      start: startDate.toISOString().split('T')[0],
+      end: endDate.toISOString().split('T')[0]
+    };
+  }
 
-    const totalAppointments = trailers.length;
-    const etruPercent = totalAppointments
-      ? Math.round((supportEtruCount / totalAppointments) * 100)
-      : 0;
-    document.getElementById('percentEtruEnabled').textContent = `${etruPercent}%`;
-
-    let yardSessionsWithoutEtru = 0;
-    let totalYardSessions = 0;
-    let etruYardSessions = 0;
-
-    trailers.forEach(t => {
-      if (!t.trailer?.supportEtru) return;
-      (t.trailer.parkSessions.nodes || []).forEach(s => {
-        if (s.space?.spaceCategory?.name?.toLowerCase() === 'yard') {
-          totalYardSessions++;
-          if (s.space.etruEnabled) etruYardSessions++;
-          else yardSessionsWithoutEtru++;
-        }
-      });
-    });
-
-    document.getElementById('count2').textContent = yardSessionsWithoutEtru;
-    const assignmentRate = totalYardSessions
-      ? Math.round((etruYardSessions / totalYardSessions) * 100)
-      : 0;
-    document.getElementById('count3').textContent = `${assignmentRate}%`;
-  })
-  .catch(err => {
-    console.error('Trailer metric fetch error:', err);
-  });
-
-  // ✅ NEW: Total Facility Usage Query
-  const facilityUsageQuery = `
-    query($from: Date!, $to: Date!) {
-      facilities {
-        nodes {
-          submeters {
-            usage(from: $from, to: $to) {
-              aggregates {
-                SUM
-              }
-            }
-          }
-        }
-      }
-    }
-  `;
-
-  fetch('https://lin-statesville-etru-dash-proxy.onrender.com/proxy-submeter', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      query: facilityUsageQuery,
-      variables: {
-        from: isoStart.split('T')[0],  // Convert to YYYY-MM-DD format
-        to: isoEnd.split('T')[0]
-      }
-    })
-  })
-  .then(res => res.json())
-  .then(data => {
-    let totalFacilityUsage = 0;
-    const facilities = data?.data?.facilities?.nodes || [];
+  // Handle date range selection
+  dateRangeSelect.addEventListener('change', () => {
+    const selectedRange = dateRangeSelect.value;
     
-    facilities.forEach(facility => {
-      facility.submeters?.forEach(submeter => {
-        totalFacilityUsage += submeter.usage?.aggregates?.SUM || 0;
-      });
-    });
-
-    document.getElementById('totalUsage').textContent = `${Math.round(totalFacilityUsage).toLocaleString()} kWh`;
-  })
-  .catch(err => {
-    console.error('Facility usage fetch error:', err);
-    document.getElementById('totalUsage').textContent = 'Error';
+    if (selectedRange === 'custom') {
+      customDateInputs.style.display = 'inline-block';
+      
+      // Set default custom dates if not already set
+      if (!customStartInput.value || !customEndInput.value) {
+        const lastMonth = getDateRange('last-month');
+        customStartInput.value = lastMonth.start;
+        customEndInput.value = lastMonth.end;
+      }
+    } else {
+      customDateInputs.style.display = 'none';
+      updateFilters();
+    }
   });
 
-  // Submeter Session Metrics (Assigned Usage)
-  const submeterQuery = `
-    query($filter: SubmeterSessionFilter) {
-      submeterSessions(filter: $filter) {
-        nodes {
-          id
-          startTime
-          endTime
-          usage { aggregates { SUM } }
-        }
-      }
+  // Handle custom date changes
+  customStartInput.addEventListener('change', () => {
+    customEndInput.min = customStartInput.value;
+    if (customEndInput.value && customEndInput.value < customStartInput.value) {
+      customEndInput.value = customStartInput.value;
     }
-  `;
+    updateFilters();
+  });
 
-  fetch('https://lin-statesville-etru-dash-proxy.onrender.com/proxy-submeter', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      query: submeterQuery,
-      variables: {
-        filter: {
-          startTime: { greaterThanOrEqualTo: isoStart, lessThanOrEqualTo: isoEnd }
-        }
+  customEndInput.addEventListener('change', () => {
+    updateFilters();
+  });
+
+  function updateFilters() {
+    const selectedRange = dateRangeSelect.value;
+    let startDateStr, endDateStr;
+
+    if (selectedRange === 'custom') {
+      const today = new Date().toISOString().split('T')[0];
+      
+      if (!customStartInput.value || !customEndInput.value) {
+        alert("Please select both start and end dates.");
+        return;
       }
-    })
-  })
-  .then(res => res.json())
-  .then(data => {
-    const sessions = data?.data?.submeterSessions?.nodes || [];
-    document.getElementById('submeterCount').textContent = sessions.length;
-
-    let totalDurationMs = 0;
-    sessions.forEach(s => {
-      if (s.startTime && s.endTime) {
-        totalDurationMs += (new Date(s.endTime) - new Date(s.startTime));
+      
+      if (customEndInput.value > today) {
+        alert("End date cannot be in the future.");
+        customEndInput.value = today;
+        return;
       }
-    });
-    const totalHours = Math.round(totalDurationMs / (1000 * 60 * 60));
-    document.getElementById('submeterDuration').textContent = `${totalHours} hrs`;
+      
+      if (customStartInput.value > today) {
+        alert("Start date cannot be in the future.");
+        customStartInput.value = today;
+        return;
+      }
+      
+      if (customEndInput.value < customStartInput.value) {
+        alert("End date cannot be before start date.");
+        return;
+      }
+      
+      startDateStr = customStartInput.value;
+      endDateStr = customEndInput.value;
+    } else {
+      const dateRange = getDateRange(selectedRange);
+      startDateStr = dateRange.start;
+      endDateStr = dateRange.end;
+    }
 
-    let totalAssignedUsage = 0;
-    sessions.forEach(s => {
-      totalAssignedUsage += s.usage?.aggregates?.SUM || 0;
-    });
-    document.getElementById('totalAssignedUsage').textContent = `${Math.round(totalAssignedUsage).toLocaleString()} kWh`;
+    fetchMetrics(startDateStr, endDateStr);
+  }
 
-    // ✅ Calculate Unassigned Usage
-    // We need to wait for both total and assigned to be calculated
-    // Use a small delay or better yet, coordinate the fetches
-    setTimeout(() => {
-      const totalUsageText = document.getElementById('totalUsage').textContent;
-      const totalUsage = parseFloat(totalUsageText.replace(/[^0-9.-]+/g, '')) || 0;
-      const unassignedUsage = Math.max(0, totalUsage - totalAssignedUsage);
-      document.getElementById('totalUnassignedUsage').textContent = `${Math.round(unassignedUsage).toLocaleString()} kWh`;
-    }, 500);
+  function fetchMetrics(startDateStr, endDateStr) {
+    const isoStart = startDateStr;
+    const isoEnd = endDateStr;
 
-    // Charging % of Parked Time
-    fetch('https://lin-statesville-etru-dash-proxy.onrender.com/proxy', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        query: `
-          query($filter: TrailerAppointmentFilter, $parkSessionFilter: ParkSessionFilter) {
-            trailerAppointments(filter: $filter) {
-              nodes {
-                trailer {
-                  parkSessions(filter: $parkSessionFilter) {
-                    nodes {
-                      startTime
-                      endTime
-                      space { etruEnabled }
+    const trailerQuery = `
+      query($filter: TrailerAppointmentFilter, $parkSessionFilter: ParkSessionFilter) {
+        trailerAppointments(filter: $filter) {
+          nodes {
+            checkinTime
+            trailer {
+              carrierCode
+              supportEtru
+              parkSessions(filter: $parkSessionFilter) {
+                nodes {
+                  startTime
+                  endTime
+                  space {
+                    etruEnabled
+                    spaceCategory {
+                      name
                     }
                   }
                 }
               }
             }
           }
-        `,
+        }
+      }
+    `;
+
+    // Trailer Metrics
+    fetch('https://lin-statesville-etru-dash-proxy.onrender.com/proxy', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        query: trailerQuery,
         variables: {
           filter: {
             checkinTime: { greaterThan: isoStart, lessThanOrEqualTo: isoEnd }
@@ -398,146 +361,292 @@ function fetchMetrics(startDateStr, endDateStr) {
     })
     .then(res => res.json())
     .then(data => {
-      let totalParkMs = 0;
-      (data.data.trailerAppointments.nodes || []).forEach(t => {
+      const trailers = data?.data?.trailerAppointments?.nodes || [];
+      const supportEtruCount = trailers.filter(t => t.trailer?.supportEtru).length;
+      document.getElementById('count1').textContent = supportEtruCount;
+
+      const totalAppointments = trailers.length;
+      const etruPercent = totalAppointments
+        ? Math.round((supportEtruCount / totalAppointments) * 100)
+        : 0;
+      document.getElementById('percentEtruEnabled').textContent = `${etruPercent}%`;
+
+      let yardSessionsWithoutEtru = 0;
+      let totalYardSessions = 0;
+      let etruYardSessions = 0;
+
+      trailers.forEach(t => {
+        if (!t.trailer?.supportEtru) return;
         (t.trailer.parkSessions.nodes || []).forEach(s => {
-          if (s.space?.etruEnabled && s.startTime && s.endTime) {
-            totalParkMs += (new Date(s.endTime) - new Date(s.startTime));
+          if (s.space?.spaceCategory?.name?.toLowerCase() === 'yard') {
+            totalYardSessions++;
+            if (s.space.etruEnabled) etruYardSessions++;
+            else yardSessionsWithoutEtru++;
           }
         });
       });
-      const chargePct = totalParkMs
-        ? Math.round((totalDurationMs / totalParkMs) * 100)
+
+      document.getElementById('count2').textContent = yardSessionsWithoutEtru;
+      const assignmentRate = totalYardSessions
+        ? Math.round((etruYardSessions / totalYardSessions) * 100)
         : 0;
-      document.getElementById('chargingPercent').textContent = `${chargePct}%`;
+      document.getElementById('count3').textContent = `${assignmentRate}%`;
     })
     .catch(err => {
-      console.error('Charging % calc error:', err);
-      document.getElementById('chargingPercent').textContent = 'Error';
-    });
-  })
-  .catch(err => {
-    console.error('Submeter fetch error:', err);
-  });
-
-  // Chart: Last 180 Days
-  const chartStart = new Date(endDateStr);
-  chartStart.setDate(chartStart.getDate() - 180);
-
-  fetch('https://lin-statesville-etru-dash-proxy.onrender.com/proxy', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      query: trailerQuery,
-      variables: {
-        filter: { 
-          checkinTime: { greaterThan: chartStart.toISOString() } 
-        },
-        parkSessionFilter: {
-          startTime: { greaterThan: chartStart.toISOString() }
-        }
-      }
-    })
-  })
-  .then(res => res.json())
-  .then(chartData => {
-    const chartTrailers = chartData?.data?.trailerAppointments?.nodes || [];
-    const bucketLabels = [];
-    const bucketCounts = {};
-    const bucketRanges = [];
-    let current = new Date(chartStart.getFullYear(), chartStart.getMonth(), 1);
-
-    for (let i = 0; i < 6; i++) {
-      const start = new Date(current.getFullYear(), current.getMonth(), 1);
-      const end   = new Date(current.getFullYear(), current.getMonth() + 1, 1);
-      const label = start.toLocaleDateString('en-US', { month: 'short', year: 'numeric' });
-      bucketLabels.push(label);
-      bucketCounts[label] = 0;
-      bucketRanges.push({ start, end, label });
-      current.setMonth(current.getMonth() + 1);
-    }
-
-    chartTrailers.forEach(t => {
-      if (!t.trailer?.supportEtru || !t.checkinTime) return;
-      const checkinDate = new Date(t.checkinTime);
-      bucketRanges.forEach(({ start, end, label }) => {
-        if (checkinDate >= start && checkinDate < end) {
-          bucketCounts[label]++;
-        }
-      });
+      console.error('Trailer metric fetch error:', err);
     });
 
-    const ctx = document.getElementById('lineChart').getContext('2d');
-    if (lineChart) lineChart.destroy();
-    lineChart = new Chart(ctx, {
-      type: 'line',
-      data: {
-        labels: bucketLabels,
-        datasets: [{
-          label: 'eTRU Appointments',
-          data: bucketLabels.map(l => bucketCounts[l]),
-          borderColor: '#2c7be5',
-          borderWidth: 2,
-          fill: false,
-          tension: 0.3,
-          pointBackgroundColor: '#2c7be5'
-        }]
-      },
-      options: {
-        responsive: true,
-        plugins: {
-          legend: { display: false },
-          tooltip: {
-            callbacks: {
-              title: items => {
-                const { dataIndex } = items[0];
-                const { start, end } = bucketRanges[dataIndex];
-                return `${start.toLocaleDateString()} – ${end.toLocaleDateString()}`;
-              },
-              label: ctx => `${ctx.parsed.y} appointments`
+    // Total Facility Usage Query
+    const facilityUsageQuery = `
+      query($from: String!, $to: String!) {
+        facilities {
+          nodes {
+            submeters {
+              usage(from: $from, to: $to) {
+                aggregates {
+                  SUM
+                }
+              }
             }
           }
-        },
-        scales: {
-          y: { beginAtZero: true, ticks: { precision: 0 } }
         }
       }
+    `;
+
+    fetch('https://lin-statesville-etru-dash-proxy.onrender.com/proxy-submeter', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        query: facilityUsageQuery,
+        variables: {
+          from: isoStart.split('T')[0],
+          to: isoEnd.split('T')[0]
+        }
+      })
+    })
+    .then(res => res.json())
+    .then(data => {
+      if (data.errors) {
+        console.error('Facility usage query errors:', data.errors);
+        document.getElementById('totalUsage').textContent = 'Error';
+        return;
+      }
+
+      let totalFacilityUsage = 0;
+      const facilities = data?.data?.facilities?.nodes || [];
+      
+      facilities.forEach(facility => {
+        facility.submeters?.forEach(submeter => {
+          totalFacilityUsage += submeter.usage?.aggregates?.SUM || 0;
+        });
+      });
+
+      document.getElementById('totalUsage').textContent = `${Math.round(totalFacilityUsage).toLocaleString()} kWh`;
+    })
+    .catch(err => {
+      console.error('Facility usage fetch error:', err);
+      document.getElementById('totalUsage').textContent = 'Error';
     });
-  })
-  .catch(err => console.error('Chart data fetch error:', err));
-}
 
-    function updateFilters() {
-      const selectedEnd = endDateInput.value;
-      const selectedMin = minDateInput.value;
-      const today = new Date().toISOString().split('T')[0];
-
-      if (selectedEnd > today) {
-        alert("End date cannot be in the future.");
-        endDateInput.value = today;
-        return;
+    // Submeter Session Metrics (Assigned Usage)
+    const submeterQuery = `
+      query($filter: SubmeterSessionFilter) {
+        submeterSessions(filter: $filter) {
+          nodes {
+            id
+            startTime
+            endTime
+            usage { aggregates { SUM } }
+          }
+        }
       }
-      if (selectedMin > today) {
-        alert("Min date cannot be in the future.");
-        minDateInput.value = today;
-        return;
-      }
-      if (selectedEnd < selectedMin) {
-        alert("End date cannot be before min date.");
-        return;
-      }
+    `;
 
-      fetchMetrics(minDateInput.value, endDateInput.value);
-    }
+    fetch('https://lin-statesville-etru-dash-proxy.onrender.com/proxy-submeter', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        query: submeterQuery,
+        variables: {
+          filter: {
+            startTime: { greaterThanOrEqualTo: isoStart, lessThanOrEqualTo: isoEnd }
+          }
+        }
+      })
+    })
+    .then(res => res.json())
+    .then(data => {
+      const sessions = data?.data?.submeterSessions?.nodes || [];
+      document.getElementById('submeterCount').textContent = sessions.length;
 
-    minDateInput.addEventListener('change', () => {
-      endDateInput.min = minDateInput.value;
-      updateFilters();
+      let totalDurationMs = 0;
+      sessions.forEach(s => {
+        if (s.startTime && s.endTime) {
+          totalDurationMs += (new Date(s.endTime) - new Date(s.startTime));
+        }
+      });
+      const totalHours = Math.round(totalDurationMs / (1000 * 60 * 60));
+      document.getElementById('submeterDuration').textContent = `${totalHours} hrs`;
+
+      let totalAssignedUsage = 0;
+      sessions.forEach(s => {
+        totalAssignedUsage += s.usage?.aggregates?.SUM || 0;
+      });
+      document.getElementById('totalAssignedUsage').textContent = `${Math.round(totalAssignedUsage).toLocaleString()} kWh`;
+
+      // Calculate Unassigned Usage
+      setTimeout(() => {
+        const totalUsageText = document.getElementById('totalUsage').textContent;
+        const totalUsage = parseFloat(totalUsageText.replace(/[^0-9.-]+/g, '')) || 0;
+        const unassignedUsage = Math.max(0, totalUsage - totalAssignedUsage);
+        document.getElementById('totalUnassignedUsage').textContent = `${Math.round(unassignedUsage).toLocaleString()} kWh`;
+      }, 500);
+
+      // Charging % of Parked Time
+      fetch('https://lin-statesville-etru-dash-proxy.onrender.com/proxy', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          query: `
+            query($filter: TrailerAppointmentFilter, $parkSessionFilter: ParkSessionFilter) {
+              trailerAppointments(filter: $filter) {
+                nodes {
+                  trailer {
+                    parkSessions(filter: $parkSessionFilter) {
+                      nodes {
+                        startTime
+                        endTime
+                        space { etruEnabled }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          `,
+          variables: {
+            filter: {
+              checkinTime: { greaterThan: isoStart, lessThanOrEqualTo: isoEnd }
+            },
+            parkSessionFilter: {
+              startTime: { greaterThan: isoStart }
+            }
+          }
+        })
+      })
+      .then(res => res.json())
+      .then(data => {
+        let totalParkMs = 0;
+        (data.data.trailerAppointments.nodes || []).forEach(t => {
+          (t.trailer.parkSessions.nodes || []).forEach(s => {
+            if (s.space?.etruEnabled && s.startTime && s.endTime) {
+              totalParkMs += (new Date(s.endTime) - new Date(s.startTime));
+            }
+          });
+        });
+        const chargePct = totalParkMs
+          ? Math.round((totalDurationMs / totalParkMs) * 100)
+          : 0;
+        document.getElementById('chargingPercent').textContent = `${chargePct}%`;
+      })
+      .catch(err => {
+        console.error('Charging % calc error:', err);
+        document.getElementById('chargingPercent').textContent = 'Error';
+      });
+    })
+    .catch(err => {
+      console.error('Submeter fetch error:', err);
     });
-    endDateInput.addEventListener('change', updateFilters);
 
-    // Initial load
-    updateFilters();
-  </script>
+    // Chart: Last 180 Days
+    const chartStart = new Date(endDateStr);
+    chartStart.setDate(chartStart.getDate() - 180);
+
+    fetch('https://lin-statesville-etru-dash-proxy.onrender.com/proxy', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        query: trailerQuery,
+        variables: {
+          filter: { 
+            checkinTime: { greaterThan: chartStart.toISOString() } 
+          },
+          parkSessionFilter: {
+            startTime: { greaterThan: chartStart.toISOString() }
+          }
+        }
+      })
+    })
+    .then(res => res.json())
+    .then(chartData => {
+      const chartTrailers = chartData?.data?.trailerAppointments?.nodes || [];
+      const bucketLabels = [];
+      const bucketCounts = {};
+      const bucketRanges = [];
+      let current = new Date(chartStart.getFullYear(), chartStart.getMonth(), 1);
+
+      for (let i = 0; i < 6; i++) {
+        const start = new Date(current.getFullYear(), current.getMonth(), 1);
+        const end   = new Date(current.getFullYear(), current.getMonth() + 1, 1);
+        const label = start.toLocaleDateString('en-US', { month: 'short', year: 'numeric' });
+        bucketLabels.push(label);
+        bucketCounts[label] = 0;
+        bucketRanges.push({ start, end, label });
+        current.setMonth(current.getMonth() + 1);
+      }
+
+      chartTrailers.forEach(t => {
+        if (!t.trailer?.supportEtru || !t.checkinTime) return;
+        const checkinDate = new Date(t.checkinTime);
+        bucketRanges.forEach(({ start, end, label }) => {
+          if (checkinDate >= start && checkinDate < end) {
+            bucketCounts[label]++;
+          }
+        });
+      });
+
+      const ctx = document.getElementById('lineChart').getContext('2d');
+      if (lineChart) lineChart.destroy();
+      lineChart = new Chart(ctx, {
+        type: 'line',
+        data: {
+          labels: bucketLabels,
+          datasets: [{
+            label: 'eTRU Appointments',
+            data: bucketLabels.map(l => bucketCounts[l]),
+            borderColor: '#2c7be5',
+            borderWidth: 2,
+            fill: false,
+            tension: 0.3,
+            pointBackgroundColor: '#2c7be5'
+          }]
+        },
+        options: {
+          responsive: true,
+          plugins: {
+            legend: { display: false },
+            tooltip: {
+              callbacks: {
+                title: items => {
+                  const { dataIndex } = items[0];
+                  const { start, end } = bucketRanges[dataIndex];
+                  return `${start.toLocaleDateString()} – ${end.toLocaleDateString()}`;
+                },
+                label: ctx => `${ctx.parsed.y} appointments`
+              }
+            }
+          },
+          scales: {
+            y: { beginAtZero: true, ticks: { precision: 0 } }
+          }
+        }
+      });
+    })
+    .catch(err => console.error('Chart data fetch error:', err));
+  }
+
+  // Initial load with "Last Month" as default
+  updateFilters();
+</script>
 </body>
 </html>
