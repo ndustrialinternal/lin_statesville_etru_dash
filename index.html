@@ -176,262 +176,277 @@
     let lineChart;
 
     function fetchMetrics(startDateStr, endDateStr) {
-      const isoStart = startDateStr;
-      const isoEnd = endDateStr;
+  const isoStart = startDateStr;
+  const isoEnd = endDateStr;
 
-      const trailerQuery = `
-        query($filter: TrailerAppointmentFilter) {
-          trailerAppointments(filter: $filter) {
-            nodes {
-              checkinTime
-              trailer {
-                supportEtru
-                parkSessions {
-                  nodes {
-                    startTime
-                    endTime
-                    space {
-                      etruEnabled
-                      spaceCategory { name }
-                    }
+  // ✅ UPDATED QUERY with carrierCode and parkSessions filter
+  const trailerQuery = `
+    query($filter: TrailerAppointmentFilter, $parkSessionFilter: ParkSessionFilter) {
+      trailerAppointments(filter: $filter) {
+        nodes {
+          checkinTime
+          trailer {
+            carrierCode
+            supportEtru
+            parkSessions(filter: $parkSessionFilter) {
+              nodes {
+                startTime
+                endTime
+                space {
+                  etruEnabled
+                  spaceCategory {
+                    name
                   }
                 }
               }
             }
           }
         }
-      `;
-
-      // Trailer Metrics
-      fetch('https://lin-statesville-etru-dash-proxy.onrender.com/proxy', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          query: trailerQuery,
-          variables: {
-            filter: {
-              checkinTime: { greaterThan: isoStart, lessThanOrEqualTo: isoEnd }
-            }
-          }
-        })
-      })
-      .then(res => res.json())
-      .then(data => {
-        const trailers = data?.data?.trailerAppointments?.nodes || [];
-        const supportEtruCount = trailers.filter(t => t.trailer?.supportEtru).length;
-        document.getElementById('count1').textContent = supportEtruCount;
-
-        const totalAppointments = trailers.length;
-        const etruPercent = totalAppointments
-          ? Math.round((supportEtruCount / totalAppointments) * 100)
-          : 0;
-        document.getElementById('percentEtruEnabled').textContent = `${etruPercent}%`;
-
-        let yardSessionsWithoutEtru = 0;
-        let totalYardSessions = 0;
-        let etruYardSessions = 0;
-
-        trailers.forEach(t => {
-          if (!t.trailer?.supportEtru) return;
-          (t.trailer.parkSessions.nodes || []).forEach(s => {
-            if (s.space?.spaceCategory?.name?.toLowerCase() === 'yard') {
-              totalYardSessions++;
-              if (s.space.etruEnabled) etruYardSessions++;
-              else yardSessionsWithoutEtru++;
-            }
-          });
-        });
-
-        document.getElementById('count2').textContent = yardSessionsWithoutEtru;
-        const assignmentRate = totalYardSessions
-          ? Math.round((etruYardSessions / totalYardSessions) * 100)
-          : 0;
-        document.getElementById('count3').textContent = `${assignmentRate}%`;
-      })
-      .catch(err => {
-        console.error('Trailer metric fetch error:', err);
-      });
-
-      // Submeter Metrics
-      const submeterQuery = `
-        query($filter: SubmeterSessionFilter) {
-          submeterSessions(filter: $filter) {
-            nodes {
-              id
-              startTime
-              endTime
-              usage { aggregates { SUM } }
-            }
-          }
-        }
-      `;
-
-      fetch('https://lin-statesville-etru-dash-proxy.onrender.com/proxy-submeter', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          query: submeterQuery,
-          variables: {
-            filter: {
-              startTime: { greaterThanOrEqualTo: isoStart, lessThanOrEqualTo: isoEnd }
-            }
-          }
-        })
-      })
-      .then(res => res.json())
-      .then(data => {
-        const sessions = data?.data?.submeterSessions?.nodes || [];
-        document.getElementById('submeterCount').textContent = sessions.length;
-
-        let totalDurationMs = 0;
-        sessions.forEach(s => {
-          if (s.startTime && s.endTime) {
-            totalDurationMs += (new Date(s.endTime) - new Date(s.startTime));
-          }
-        });
-        const totalHours = Math.round(totalDurationMs / (1000 * 60 * 60));
-        document.getElementById('submeterDuration').textContent = `${totalHours} hrs`;
-
-        let totalUsage = 0;
-        sessions.forEach(s => {
-          totalUsage += s.usage?.aggregates?.SUM || 0;
-        });
-        document.getElementById('totalUsage').textContent = `${totalUsage.toLocaleString()} kWh`;
-
-        // Charging % of Parked Time
-        fetch('https://lin-statesville-etru-dash-proxy.onrender.com/proxy', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            query: `
-              query($filter: TrailerAppointmentFilter) {
-                trailerAppointments(filter: $filter) {
-                  nodes {
-                    trailer {
-                      parkSessions {
-                        nodes {
-                          startTime
-                          endTime
-                          space { etruEnabled }
-                        }
-                      }
-                    }
-                  }
-                }
-              }
-            `,
-            variables: {
-              filter: {
-                checkinTime: { greaterThan: isoStart, lessThanOrEqualTo: isoEnd }
-              }
-            }
-          })
-        })
-        .then(res => res.json())
-        .then(data => {
-          let totalParkMs = 0;
-          (data.data.trailerAppointments.nodes || []).forEach(t => {
-            (t.trailer.parkSessions.nodes || []).forEach(s => {
-              if (s.space?.etruEnabled && s.startTime && s.endTime) {
-                totalParkMs += (new Date(s.endTime) - new Date(s.startTime));
-              }
-            });
-          });
-          const chargePct = totalParkMs
-            ? Math.round((totalDurationMs / totalParkMs) * 100)
-            : 0;
-          document.getElementById('chargingPercent').textContent = `${chargePct}%`;
-        })
-        .catch(err => {
-          console.error('Charging % calc error:', err);
-          document.getElementById('chargingPercent').textContent = 'Error';
-        });
-      })
-      .catch(err => {
-        console.error('Submeter fetch error:', err);
-      });
-
-      // Chart: Last 180 Days
-      const chartStart = new Date(endDateStr);
-      chartStart.setDate(chartStart.getDate() - 180);
-
-      fetch('https://lin-statesville-etru-dash-proxy.onrender.com/proxy', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          query: trailerQuery,
-          variables: {
-            filter: { checkinTime: { greaterThan: chartStart.toISOString() } }
-          }
-        })
-      })
-      .then(res => res.json())
-      .then(chartData => {
-        const chartTrailers = chartData?.data?.trailerAppointments?.nodes || [];
-        const bucketLabels = [];
-        const bucketCounts = {};
-        const bucketRanges = [];
-        let current = new Date(chartStart.getFullYear(), chartStart.getMonth(), 1);
-
-        for (let i = 0; i < 6; i++) {
-          const start = new Date(current.getFullYear(), current.getMonth(), 1);
-          const end   = new Date(current.getFullYear(), current.getMonth() + 1, 1);
-          const label = start.toLocaleDateString('en-US', { month: 'short', year: 'numeric' });
-          bucketLabels.push(label);
-          bucketCounts[label] = 0;
-          bucketRanges.push({ start, end, label });
-          current.setMonth(current.getMonth() + 1);
-        }
-
-        chartTrailers.forEach(t => {
-          if (!t.trailer?.supportEtru || !t.checkinTime) return;
-          const checkinDate = new Date(t.checkinTime);
-          bucketRanges.forEach(({ start, end, label }) => {
-            if (checkinDate >= start && checkinDate < end) {
-              bucketCounts[label]++;
-            }
-          });
-        });
-
-        const ctx = document.getElementById('lineChart').getContext('2d');
-        if (lineChart) lineChart.destroy();
-        lineChart = new Chart(ctx, {
-          type: 'line',
-          data: {
-            labels: bucketLabels,
-            datasets: [{
-              label: 'eTRU Appointments',
-              data: bucketLabels.map(l => bucketCounts[l]),
-              borderColor: '#2c7be5',
-              borderWidth: 2,
-              fill: false,
-              tension: 0.3,
-              pointBackgroundColor: '#2c7be5'
-            }]
-          },
-          options: {
-            responsive: true,
-            plugins: {
-              legend: { display: false },
-              tooltip: {
-                callbacks: {
-                  title: items => {
-                    const { dataIndex } = items[0];
-                    const { start, end } = bucketRanges[dataIndex];
-                    return `${start.toLocaleDateString()} – ${end.toLocaleDateString()}`;
-                  },
-                  label: ctx => `${ctx.parsed.y} appointments`
-                }
-              }
-            },
-            scales: {
-              y: { beginAtZero: true, ticks: { precision: 0 } }
-            }
-          }
-        });
-      })
-      .catch(err => console.error('Chart data fetch error:', err));
+      }
     }
+  `;
+
+  // Trailer Metrics
+  fetch('https://lin-statesville-etru-dash-proxy.onrender.com/proxy', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      query: trailerQuery,
+      variables: {
+        filter: {
+          checkinTime: { greaterThan: isoStart, lessThanOrEqualTo: isoEnd }
+        },
+        parkSessionFilter: {
+          startTime: { greaterThan: isoStart }
+        }
+      }
+    })
+  })
+  .then(res => res.json())
+  .then(data => {
+    const trailers = data?.data?.trailerAppointments?.nodes || [];
+    const supportEtruCount = trailers.filter(t => t.trailer?.supportEtru).length;
+    document.getElementById('count1').textContent = supportEtruCount;
+
+    const totalAppointments = trailers.length;
+    const etruPercent = totalAppointments
+      ? Math.round((supportEtruCount / totalAppointments) * 100)
+      : 0;
+    document.getElementById('percentEtruEnabled').textContent = `${etruPercent}%`;
+
+    let yardSessionsWithoutEtru = 0;
+    let totalYardSessions = 0;
+    let etruYardSessions = 0;
+
+    trailers.forEach(t => {
+      if (!t.trailer?.supportEtru) return;
+      (t.trailer.parkSessions.nodes || []).forEach(s => {
+        if (s.space?.spaceCategory?.name?.toLowerCase() === 'yard') {
+          totalYardSessions++;
+          if (s.space.etruEnabled) etruYardSessions++;
+          else yardSessionsWithoutEtru++;
+        }
+      });
+    });
+
+    document.getElementById('count2').textContent = yardSessionsWithoutEtru;
+    const assignmentRate = totalYardSessions
+      ? Math.round((etruYardSessions / totalYardSessions) * 100)
+      : 0;
+    document.getElementById('count3').textContent = `${assignmentRate}%`;
+  })
+  .catch(err => {
+    console.error('Trailer metric fetch error:', err);
+  });
+
+  // Submeter Metrics
+  const submeterQuery = `
+    query($filter: SubmeterSessionFilter) {
+      submeterSessions(filter: $filter) {
+        nodes {
+          id
+          startTime
+          endTime
+          usage { aggregates { SUM } }
+        }
+      }
+    }
+  `;
+
+  fetch('https://lin-statesville-etru-dash-proxy.onrender.com/proxy-submeter', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      query: submeterQuery,
+      variables: {
+        filter: {
+          startTime: { greaterThanOrEqualTo: isoStart, lessThanOrEqualTo: isoEnd }
+        }
+      }
+    })
+  })
+  .then(res => res.json())
+  .then(data => {
+    const sessions = data?.data?.submeterSessions?.nodes || [];
+    document.getElementById('submeterCount').textContent = sessions.length;
+
+    let totalDurationMs = 0;
+    sessions.forEach(s => {
+      if (s.startTime && s.endTime) {
+        totalDurationMs += (new Date(s.endTime) - new Date(s.startTime));
+      }
+    });
+    const totalHours = Math.round(totalDurationMs / (1000 * 60 * 60));
+    document.getElementById('submeterDuration').textContent = `${totalHours} hrs`;
+
+    let totalUsage = 0;
+    sessions.forEach(s => {
+      totalUsage += s.usage?.aggregates?.SUM || 0;
+    });
+    document.getElementById('totalUsage').textContent = `${totalUsage.toLocaleString()} kWh`;
+
+    // Charging % of Parked Time
+    fetch('https://lin-statesville-etru-dash-proxy.onrender.com/proxy', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        query: `
+          query($filter: TrailerAppointmentFilter, $parkSessionFilter: ParkSessionFilter) {
+            trailerAppointments(filter: $filter) {
+              nodes {
+                trailer {
+                  parkSessions(filter: $parkSessionFilter) {
+                    nodes {
+                      startTime
+                      endTime
+                      space { etruEnabled }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        `,
+        variables: {
+          filter: {
+            checkinTime: { greaterThan: isoStart, lessThanOrEqualTo: isoEnd }
+          },
+          parkSessionFilter: {
+            startTime: { greaterThan: isoStart }
+          }
+        }
+      })
+    })
+    .then(res => res.json())
+    .then(data => {
+      let totalParkMs = 0;
+      (data.data.trailerAppointments.nodes || []).forEach(t => {
+        (t.trailer.parkSessions.nodes || []).forEach(s => {
+          if (s.space?.etruEnabled && s.startTime && s.endTime) {
+            totalParkMs += (new Date(s.endTime) - new Date(s.startTime));
+          }
+        });
+      });
+      const chargePct = totalParkMs
+        ? Math.round((totalDurationMs / totalParkMs) * 100)
+        : 0;
+      document.getElementById('chargingPercent').textContent = `${chargePct}%`;
+    })
+    .catch(err => {
+      console.error('Charging % calc error:', err);
+      document.getElementById('chargingPercent').textContent = 'Error';
+    });
+  })
+  .catch(err => {
+    console.error('Submeter fetch error:', err);
+  });
+
+  // Chart: Last 180 Days
+  const chartStart = new Date(endDateStr);
+  chartStart.setDate(chartStart.getDate() - 180);
+
+  fetch('https://lin-statesville-etru-dash-proxy.onrender.com/proxy', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      query: trailerQuery,
+      variables: {
+        filter: { 
+          checkinTime: { greaterThan: chartStart.toISOString() } 
+        },
+        parkSessionFilter: {
+          startTime: { greaterThan: chartStart.toISOString() }
+        }
+      }
+    })
+  })
+  .then(res => res.json())
+  .then(chartData => {
+    const chartTrailers = chartData?.data?.trailerAppointments?.nodes || [];
+    const bucketLabels = [];
+    const bucketCounts = {};
+    const bucketRanges = [];
+    let current = new Date(chartStart.getFullYear(), chartStart.getMonth(), 1);
+
+    for (let i = 0; i < 6; i++) {
+      const start = new Date(current.getFullYear(), current.getMonth(), 1);
+      const end   = new Date(current.getFullYear(), current.getMonth() + 1, 1);
+      const label = start.toLocaleDateString('en-US', { month: 'short', year: 'numeric' });
+      bucketLabels.push(label);
+      bucketCounts[label] = 0;
+      bucketRanges.push({ start, end, label });
+      current.setMonth(current.getMonth() + 1);
+    }
+
+    chartTrailers.forEach(t => {
+      if (!t.trailer?.supportEtru || !t.checkinTime) return;
+      const checkinDate = new Date(t.checkinTime);
+      bucketRanges.forEach(({ start, end, label }) => {
+        if (checkinDate >= start && checkinDate < end) {
+          bucketCounts[label]++;
+        }
+      });
+    });
+
+    const ctx = document.getElementById('lineChart').getContext('2d');
+    if (lineChart) lineChart.destroy();
+    lineChart = new Chart(ctx, {
+      type: 'line',
+      data: {
+        labels: bucketLabels,
+        datasets: [{
+          label: 'eTRU Appointments',
+          data: bucketLabels.map(l => bucketCounts[l]),
+          borderColor: '#2c7be5',
+          borderWidth: 2,
+          fill: false,
+          tension: 0.3,
+          pointBackgroundColor: '#2c7be5'
+        }]
+      },
+      options: {
+        responsive: true,
+        plugins: {
+          legend: { display: false },
+          tooltip: {
+            callbacks: {
+              title: items => {
+                const { dataIndex } = items[0];
+                const { start, end } = bucketRanges[dataIndex];
+                return `${start.toLocaleDateString()} – ${end.toLocaleDateString()}`;
+              },
+              label: ctx => `${ctx.parsed.y} appointments`
+            }
+          }
+        },
+        scales: {
+          y: { beginAtZero: true, ticks: { precision: 0 } }
+        }
+      }
+    });
+  })
+  .catch(err => console.error('Chart data fetch error:', err));
+}
 
     function updateFilters() {
       const selectedEnd = endDateInput.value;
