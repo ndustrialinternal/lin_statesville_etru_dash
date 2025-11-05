@@ -116,44 +116,48 @@
       <input type="date" id="endDate" />
     </div>
 
-    <div class="card-container">
-      <div class="metric-card">
-        <h2>eTRU Trailers</h2>
-        <div class="value" id="count1">Loading...</div>
-      </div>
-      <div class="metric-card">
-        <h2>eTRU-Enabled Trailer %</h2>
-        <div class="value" id="percentEtruEnabled">Loading...</div>
-      </div>
-      <div class="metric-card">
-        <h2>eTRU Missed Assignments</h2>
-        <div class="value" id="count2">Loading...</div>
-      </div>
-      <div class="metric-card">
-        <h2>eTRU Assignment Rate</h2>
-        <div class="value" id="count3">Loading...</div>
-      </div>
-      <div class="metric-card">
-        <h2>Powering Session Count</h2>
-        <div class="value" id="submeterCount">Loading...</div>
-      </div>
-      <div class="metric-card">
-        <h2>Power Session Total Duration</h2>
-        <div class="value" id="submeterDuration">Loading...</div>
-      </div>
-      <div class="metric-card">
-        <h2>Total Usage (kWh)</h2>
-        <div class="value" id="totalUsage">Loading...</div>
-      </div>
-      <div class="metric-card">
-        <h2>Charging % of Parked Time</h2>
-        <div class="value" id="chargingPercent">Loading...</div>
-      </div>
-    </div>
-
-    <h2 class="section-title">eTRU Trailer Appointments Over Time</h2>
-    <canvas id="lineChart" height="300"></canvas>
+   <div class="card-container">
+  <div class="metric-card">
+    <h2>eTRU Trailers</h2>
+    <div class="value" id="count1">Loading...</div>
   </div>
+  <div class="metric-card">
+    <h2>eTRU-Enabled Trailer %</h2>
+    <div class="value" id="percentEtruEnabled">Loading...</div>
+  </div>
+  <div class="metric-card">
+    <h2>eTRU Missed Assignments</h2>
+    <div class="value" id="count2">Loading...</div>
+  </div>
+  <div class="metric-card">
+    <h2>eTRU Assignment Rate</h2>
+    <div class="value" id="count3">Loading...</div>
+  </div>
+  <div class="metric-card">
+    <h2>Powering Session Count</h2>
+    <div class="value" id="submeterCount">Loading...</div>
+  </div>
+  <div class="metric-card">
+    <h2>Power Session Total Duration</h2>
+    <div class="value" id="submeterDuration">Loading...</div>
+  </div>
+  <div class="metric-card">
+    <h2>Total Usage (kWh)</h2>
+    <div class="value" id="totalUsage">Loading...</div>
+  </div>
+  <div class="metric-card">
+    <h2>Total Assigned Usage (kWh)</h2>
+    <div class="value" id="totalAssignedUsage">Loading...</div>
+  </div>
+  <div class="metric-card">
+    <h2>Total Unassigned Usage (kWh)</h2>
+    <div class="value" id="totalUnassignedUsage">Loading...</div>
+  </div>
+  <div class="metric-card">
+    <h2>Charging % of Parked Time</h2>
+    <div class="value" id="chargingPercent">Loading...</div>
+  </div>
+</div>
 
   <script>
     const minDateInput = document.getElementById('minDate');
@@ -175,11 +179,10 @@
 
     let lineChart;
 
-    function fetchMetrics(startDateStr, endDateStr) {
+function fetchMetrics(startDateStr, endDateStr) {
   const isoStart = startDateStr;
   const isoEnd = endDateStr;
 
-  // ✅ UPDATED QUERY with carrierCode and parkSessions filter
   const trailerQuery = `
     query($filter: TrailerAppointmentFilter, $parkSessionFilter: ParkSessionFilter) {
       trailerAppointments(filter: $filter) {
@@ -259,7 +262,53 @@
     console.error('Trailer metric fetch error:', err);
   });
 
-  // Submeter Metrics
+  // ✅ NEW: Total Facility Usage Query
+  const facilityUsageQuery = `
+    query($from: Date!, $to: Date!) {
+      facilities {
+        nodes {
+          submeters {
+            usage(from: $from, to: $to) {
+              aggregates {
+                SUM
+              }
+            }
+          }
+        }
+      }
+    }
+  `;
+
+  fetch('https://lin-statesville-etru-dash-proxy.onrender.com/proxy-submeter', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      query: facilityUsageQuery,
+      variables: {
+        from: isoStart.split('T')[0],  // Convert to YYYY-MM-DD format
+        to: isoEnd.split('T')[0]
+      }
+    })
+  })
+  .then(res => res.json())
+  .then(data => {
+    let totalFacilityUsage = 0;
+    const facilities = data?.data?.facilities?.nodes || [];
+    
+    facilities.forEach(facility => {
+      facility.submeters?.forEach(submeter => {
+        totalFacilityUsage += submeter.usage?.aggregates?.SUM || 0;
+      });
+    });
+
+    document.getElementById('totalUsage').textContent = `${Math.round(totalFacilityUsage).toLocaleString()} kWh`;
+  })
+  .catch(err => {
+    console.error('Facility usage fetch error:', err);
+    document.getElementById('totalUsage').textContent = 'Error';
+  });
+
+  // Submeter Session Metrics (Assigned Usage)
   const submeterQuery = `
     query($filter: SubmeterSessionFilter) {
       submeterSessions(filter: $filter) {
@@ -299,11 +348,21 @@
     const totalHours = Math.round(totalDurationMs / (1000 * 60 * 60));
     document.getElementById('submeterDuration').textContent = `${totalHours} hrs`;
 
-    let totalUsage = 0;
+    let totalAssignedUsage = 0;
     sessions.forEach(s => {
-      totalUsage += s.usage?.aggregates?.SUM || 0;
+      totalAssignedUsage += s.usage?.aggregates?.SUM || 0;
     });
-    document.getElementById('totalUsage').textContent = `${totalUsage.toLocaleString()} kWh`;
+    document.getElementById('totalAssignedUsage').textContent = `${Math.round(totalAssignedUsage).toLocaleString()} kWh`;
+
+    // ✅ Calculate Unassigned Usage
+    // We need to wait for both total and assigned to be calculated
+    // Use a small delay or better yet, coordinate the fetches
+    setTimeout(() => {
+      const totalUsageText = document.getElementById('totalUsage').textContent;
+      const totalUsage = parseFloat(totalUsageText.replace(/[^0-9.-]+/g, '')) || 0;
+      const unassignedUsage = Math.max(0, totalUsage - totalAssignedUsage);
+      document.getElementById('totalUnassignedUsage').textContent = `${Math.round(unassignedUsage).toLocaleString()} kWh`;
+    }, 500);
 
     // Charging % of Parked Time
     fetch('https://lin-statesville-etru-dash-proxy.onrender.com/proxy', {
