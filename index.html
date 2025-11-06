@@ -155,6 +155,39 @@
   color: #2b2f32;
   font-weight: 300;
 }
+/* Add to your existing <style> section */
+    .header-controls {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  margin-left: auto;
+}
+
+.export-button {
+  padding: 0.75rem 1.5rem;
+  background-color: #2c7be5;
+  color: white;
+  border: none;
+  border-radius: 6px;
+  font-size: 1rem;
+  font-weight: 500;
+  cursor: pointer;
+  transition: background-color 0.2s;
+  white-space: nowrap;
+}
+
+.export-button:hover {
+  background-color: #1e5bb8;
+}
+
+.export-button:active {
+  background-color: #164a94;
+}
+
+.export-button:disabled {
+  background-color: #94a3b8;
+  cursor: not-allowed;
+}
   </style>
 </head>
 <body>
@@ -167,8 +200,11 @@
     </div>
   
     <div class="header-banner">
-      <h1>Nsight Fleet Charge Dashboard</h1>
-    </div>
+        <h1>Nsight Fleet Charge Dashboard</h1>
+        <div class="header-controls">
+          <button id="exportButton" class="export-button">Export Last 6 Months Data</button>
+        </div>
+      </div>
 
   <div class="dashboard-container">
     <h1>Lineage - Statesville eTRU Metrics</h1>
@@ -763,9 +799,285 @@
   })
   .catch(err => console.error('Chart data fetch error:', err));
 }
+// Export functionality
+document.getElementById('exportButton').addEventListener('click', async () => {
+  const exportButton = document.getElementById('exportButton');
+  const loadingOverlay = document.getElementById('loadingOverlay');
+  
+  // Disable button and show loading
+  exportButton.disabled = true;
+  exportButton.textContent = 'Exporting...';
+  loadingOverlay.classList.add('active');
 
-  // Initial load with "Last Month" as default
-  updateFilters();
+  try {
+    const now = new Date();
+    const monthsData = [];
+
+    // Generate data for last 6 months
+    for (let i = 5; i >= 0; i--) {
+      const monthStart = new Date(now.getFullYear(), now.getMonth() - i, 1);
+      const monthEnd = new Date(now.getFullYear(), now.getMonth() - i + 1, 0);
+      
+      const startStr = monthStart.toISOString().split('T')[0];
+      const endStr = monthEnd.toISOString().split('T')[0];
+      const monthLabel = monthStart.toLocaleDateString('en-US', { month: 'short', year: 'numeric' });
+
+      const monthMetrics = await fetchMetricsForExport(startStr, endStr);
+      monthsData.push({
+        month: monthLabel,
+        ...monthMetrics
+      });
+    }
+
+    // Generate CSV
+    const csv = generateCSV(monthsData);
+    
+    // Download CSV
+    const blob = new Blob([csv], { type: 'text/csv' });
+    const url = window.URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `etru-metrics-last-6-months-${now.toISOString().split('T')[0]}.csv`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    window.URL.revokeObjectURL(url);
+
+  } catch (error) {
+    console.error('Export error:', error);
+    alert('Failed to export data. Please try again.');
+  } finally {
+    // Re-enable button and hide loading
+    exportButton.disabled = false;
+    exportButton.textContent = 'Export Last 6 Months Data';
+    loadingOverlay.classList.remove('active');
+  }
+});
+
+// Fetch metrics for a specific month (for export)
+async function fetchMetricsForExport(startDateStr, endDateStr) {
+  const isoStart = startDateStr;
+  const isoEnd = endDateStr;
+
+  const trailerQuery = `
+    query($filter: TrailerAppointmentFilter, $parkSessionFilter: ParkSessionFilter) {
+      trailerAppointments(filter: $filter) {
+        nodes {
+          checkinTime
+          trailer {
+            carrierCode
+            supportEtru
+            parkSessions(filter: $parkSessionFilter) {
+              nodes {
+                startTime
+                endTime
+                space {
+                  etruEnabled
+                  spaceCategory {
+                    name
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  `;
+
+  const metrics = {
+    etruTrailers: 0,
+    etruEnabledPercent: 0,
+    missedAssignments: 0,
+    assignmentRate: 0,
+    totalEtruParkTime: 0,
+    totalChargingTime: 0,
+    chargingPercent: 0,
+    totalUsage: 0,
+    totalAssignedUsage: 0,
+    totalUnassignedUsage: 0
+  };
+
+  try {
+    // Fetch trailer data
+    const trailerResponse = await fetch('https://lin-statesville-etru-dash-proxy.onrender.com/proxy', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        query: trailerQuery,
+        variables: {
+          filter: {
+            checkinTime: { greaterThan: isoStart, lessThanOrEqualTo: isoEnd }
+          },
+          parkSessionFilter: {
+            startTime: { greaterThan: isoStart }
+          }
+        }
+      })
+    });
+
+    const trailerData = await trailerResponse.json();
+    const trailers = trailerData?.data?.trailerAppointments?.nodes || [];
+    
+    metrics.etruTrailers = trailers.filter(t => t.trailer?.supportEtru).length;
+    const totalAppointments = trailers.length;
+    metrics.etruEnabledPercent = totalAppointments
+      ? Math.round((metrics.etruTrailers / totalAppointments) * 100)
+      : 0;
+
+    let yardSessionsWithoutEtru = 0;
+    let totalYardSessions = 0;
+    let etruYardSessions = 0;
+    let totalEtruParkTimeMs = 0;
+    let totalParkMs = 0;
+
+    trailers.forEach(t => {
+      if (!t.trailer?.supportEtru) return;
+      (t.trailer.parkSessions.nodes || []).forEach(s => {
+        if (s.space?.spaceCategory?.name?.toLowerCase() === 'yard') {
+          totalYardSessions++;
+          if (s.space.etruEnabled) {
+            etruYardSessions++;
+            if (s.startTime && s.endTime) {
+              const duration = new Date(s.endTime) - new Date(s.startTime);
+              totalEtruParkTimeMs += duration;
+              totalParkMs += duration;
+            }
+          } else {
+            yardSessionsWithoutEtru++;
+          }
+        }
+      });
+    });
+
+    metrics.missedAssignments = yardSessionsWithoutEtru;
+    metrics.assignmentRate = totalYardSessions
+      ? Math.round((etruYardSessions / totalYardSessions) * 100)
+      : 0;
+    metrics.totalEtruParkTime = Math.round(totalEtruParkTimeMs / (1000 * 60 * 60));
+
+    // Fetch facility usage
+    const facilityUsageQuery = `
+      query($from: String!, $to: String!) {
+        submeters {
+          usage(from: $from, to: $to, aggregation: SUM) {
+            aggregates {
+              SUM
+            }
+          }
+        }
+      }
+    `;
+
+    const facilityResponse = await fetch('https://lin-statesville-etru-dash-proxy.onrender.com/proxy-submeter', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        query: facilityUsageQuery,
+        variables: {
+          from: isoStart.split('T')[0],
+          to: isoEnd.split('T')[0]
+        }
+      })
+    });
+
+    const facilityData = await facilityResponse.json();
+    metrics.totalUsage = Math.round(facilityData?.data?.submeters?.usage?.aggregates?.SUM || 0);
+
+    // Fetch submeter sessions
+    const submeterQuery = `
+      query($filter: SubmeterSessionFilter) {
+        submeterSessions(filter: $filter) {
+          nodes {
+            id
+            startTime
+            endTime
+            usage { aggregates { SUM } }
+          }
+        }
+      }
+    `;
+
+    const submeterResponse = await fetch('https://lin-statesville-etru-dash-proxy.onrender.com/proxy-submeter', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        query: submeterQuery,
+        variables: {
+          filter: {
+            startTime: { greaterThanOrEqualTo: isoStart, lessThanOrEqualTo: isoEnd }
+          }
+        }
+      })
+    });
+
+    const submeterData = await submeterResponse.json();
+    const sessions = submeterData?.data?.submeterSessions?.nodes || [];
+
+    let totalDurationMs = 0;
+    let totalAssignedUsage = 0;
+
+    sessions.forEach(s => {
+      if (s.startTime && s.endTime) {
+        totalDurationMs += (new Date(s.endTime) - new Date(s.startTime));
+      }
+      totalAssignedUsage += s.usage?.aggregates?.SUM || 0;
+    });
+
+    metrics.totalChargingTime = Math.round(totalDurationMs / (1000 * 60 * 60));
+    metrics.totalAssignedUsage = Math.round(totalAssignedUsage);
+    metrics.totalUnassignedUsage = Math.max(0, metrics.totalUsage - metrics.totalAssignedUsage);
+    metrics.chargingPercent = totalParkMs
+      ? Math.round((totalDurationMs / totalParkMs) * 100)
+      : 0;
+
+  } catch (error) {
+    console.error('Error fetching metrics for export:', error);
+  }
+
+  return metrics;
+}
+
+// Generate CSV from metrics data
+function generateCSV(data) {
+  const headers = [
+    'Month',
+    'eTRU Trailers',
+    'eTRU-Enabled Trailer %',
+    'eTRU Missed Assignments',
+    'eTRU Assignment Rate %',
+    'Total Time in eTRU Spaces (hrs)',
+    'Total Charging Time (hrs)',
+    'Charging Time % of Parked Time',
+    'Total Assigned Usage (kWh)',
+    'Total Unassigned Usage (kWh)',
+    'Total Usage (kWh)'
+  ];
+
+  const rows = data.map(d => [
+    d.month,
+    d.etruTrailers,
+    d.etruEnabledPercent,
+    d.missedAssignments,
+    d.assignmentRate,
+    d.totalEtruParkTime,
+    d.totalChargingTime,
+    d.chargingPercent,
+    d.totalAssignedUsage,
+    d.totalUnassignedUsage,
+    d.totalUsage
+  ]);
+
+  const csvContent = [
+    headers.join(','),
+    ...rows.map(row => row.join(','))
+  ].join('\n');
+
+  return csvContent;
+}
+
+// Initial load with "Last Month" as default
+updateFilters();
 </script>
 </body>
 </html>
