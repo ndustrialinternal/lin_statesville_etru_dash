@@ -201,13 +201,13 @@
   
     <div class="header-banner">
         <h1>Nsight Fleet Charge Dashboard</h1>
-        <div class="header-controls">
+    </div>
+
+    <div class="dashboard-container">
+        <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 1rem; margin-top: 1rem;">
+          <h1 style="margin: 0;">Lineage - Statesville eTRU Metrics</h1>
           <button id="exportButton" class="export-button">Export Last 6 Months Data</button>
         </div>
-      </div>
-
-  <div class="dashboard-container">
-    <h1>Lineage - Statesville eTRU Metrics</h1>
 
     <div class="facilitySelectorCommonComponent" style="margin-bottom: 1rem;">
       <label for="dateRange">Date Range:</label>
@@ -503,7 +503,7 @@
           checkinTime: { greaterThan: isoStart, lessThanOrEqualTo: isoEnd }
         },
         parkSessionFilter: {
-          startTime: { greaterThan: isoStart, lessThanOrEqualTo: isoEnd }
+          startTime: { greaterThan: isoStart }
         }
       }
     })
@@ -559,159 +559,161 @@
   });
 
   // Total Facility Usage Query
-  const facilityUsageQuery = `
-    query($from: String!, $to: String!) {
-      submeters {
-        usage(from: $from, to: $to, aggregation: SUM) {
-          aggregates {
-            SUM
-          }
+ // Total Facility Usage Query
+const facilityUsageQuery = `
+  query($from: String!, $to: String!) {
+    submeters {
+      usage(from: $from, to: $to, aggregation: SUM) {
+        aggregates {
+          SUM
         }
       }
     }
-  `;
+  }
+`;
 
-  fetch('https://lin-statesville-etru-dash-proxy.onrender.com/proxy-submeter', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      query: facilityUsageQuery,
-      variables: {
-        from: isoStart.split('T')[0],
-        to: isoEnd.split('T')[0]
-      }
-    })
-  })
-  .then(res => res.json())
-  .then(data => {
-    if (data.errors) {
-      console.error('Facility usage query errors:', data.errors);
-      document.getElementById('totalUsage').textContent = 'Error';
-      checkAllComplete(); // ✅ Mark as complete
-      return;
+// Fetch Total Usage and store the promise
+const totalUsagePromise = fetch('https://lin-statesville-etru-dash-proxy.onrender.com/proxy-submeter', {
+  method: 'POST',
+  headers: { 'Content-Type': 'application/json' },
+  body: JSON.stringify({
+    query: facilityUsageQuery,
+    variables: {
+      from: isoStart.split('T')[0],
+      to: isoEnd.split('T')[0]
     }
-
-    const totalFacilityUsage = data?.data?.submeters?.usage?.aggregates?.SUM || 0;
-    document.getElementById('totalUsage').textContent = `${Math.round(totalFacilityUsage).toLocaleString()} kWh`;
-    checkAllComplete(); // ✅ Mark as complete
   })
-  .catch(err => {
-    console.error('Facility usage fetch error:', err);
+})
+.then(res => res.json())
+.then(data => {
+  if (data.errors) {
+    console.error('Facility usage query errors:', data.errors);
     document.getElementById('totalUsage').textContent = 'Error';
-    checkAllComplete(); // ✅ Mark as complete
-  });
+    checkAllComplete();
+    return 0;
+  }
 
-  // Submeter Session Metrics (Assigned Usage)
-  const submeterQuery = `
-    query($filter: SubmeterSessionFilter) {
-      submeterSessions(filter: $filter) {
-        nodes {
-          id
-          startTime
-          endTime
-          usage { aggregates { SUM } }
-        }
+  const totalFacilityUsage = data?.data?.submeters?.usage?.aggregates?.SUM || 0;
+  document.getElementById('totalUsage').textContent = `${Math.round(totalFacilityUsage).toLocaleString()} kWh`;
+  checkAllComplete();
+  return totalFacilityUsage;
+})
+.catch(err => {
+  console.error('Facility usage fetch error:', err);
+  document.getElementById('totalUsage').textContent = 'Error';
+  checkAllComplete();
+  return 0;
+});
+
+// Submeter Session Metrics (Assigned Usage)
+const submeterQuery = `
+  query($filter: SubmeterSessionFilter) {
+    submeterSessions(filter: $filter) {
+      nodes {
+        id
+        startTime
+        endTime
+        usage { aggregates { SUM } }
       }
     }
-  `;
+  }
+`;
 
-  fetch('https://lin-statesville-etru-dash-proxy.onrender.com/proxy-submeter', {
+fetch('https://lin-statesville-etru-dash-proxy.onrender.com/proxy-submeter', {
+  method: 'POST',
+  headers: { 'Content-Type': 'application/json' },
+  body: JSON.stringify({
+    query: submeterQuery,
+    variables: {
+      filter: {
+        startTime: { greaterThanOrEqualTo: isoStart, lessThanOrEqualTo: isoEnd }
+      }
+    }
+  })
+})
+.then(res => res.json())
+.then(async data => {
+  const sessions = data?.data?.submeterSessions?.nodes || [];
+
+  let totalDurationMs = 0;
+  sessions.forEach(s => {
+    if (s.startTime && s.endTime) {
+      totalDurationMs += (new Date(s.endTime) - new Date(s.startTime));
+    }
+  });
+  const totalHours = Math.round(totalDurationMs / (1000 * 60 * 60));
+  document.getElementById('totalChargingTime').textContent = `${totalHours.toLocaleString()} hrs`;
+
+  let totalAssignedUsage = 0;
+  sessions.forEach(s => {
+    totalAssignedUsage += s.usage?.aggregates?.SUM || 0;
+  });
+  const roundedAssignedUsage = Math.round(totalAssignedUsage);
+  document.getElementById('totalAssignedUsage').textContent = `${roundedAssignedUsage.toLocaleString()} kWh`;
+
+  // ✅ FIXED: Wait for total usage and calculate with actual values
+  const totalUsage = await totalUsagePromise;
+  const unassignedUsage = Math.max(0, Math.round(totalUsage) - roundedAssignedUsage);
+  document.getElementById('totalUnassignedUsage').textContent = `${unassignedUsage.toLocaleString()} kWh`;
+
+  // Charging % of Parked Time
+  fetch('https://lin-statesville-etru-dash-proxy.onrender.com/proxy', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
-      query: submeterQuery,
-      variables: {
-        filter: {
-          startTime: { greaterThanOrEqualTo: isoStart, lessThanOrEqualTo: isoEnd }
-        }
-      }
-    })
-  })
-  .then(res => res.json())
-  .then(data => {
-    const sessions = data?.data?.submeterSessions?.nodes || [];
-
-    let totalDurationMs = 0;
-    sessions.forEach(s => {
-      if (s.startTime && s.endTime) {
-        totalDurationMs += (new Date(s.endTime) - new Date(s.startTime));
-      }
-    });
-    const totalHours = Math.round(totalDurationMs / (1000 * 60 * 60));
-    document.getElementById('totalChargingTime').textContent = `${totalHours.toLocaleString()} hrs`;
-
-    let totalAssignedUsage = 0;
-    sessions.forEach(s => {
-      totalAssignedUsage += s.usage?.aggregates?.SUM || 0;
-    });
-    document.getElementById('totalAssignedUsage').textContent = `${Math.round(totalAssignedUsage).toLocaleString()} kWh`;
-
-    // Calculate Unassigned Usage
-    setTimeout(() => {
-      const totalUsageText = document.getElementById('totalUsage').textContent;
-      const totalUsage = parseFloat(totalUsageText.replace(/[^0-9.-]+/g, '')) || 0;
-      const unassignedUsage = Math.max(0, totalUsage - totalAssignedUsage);
-      document.getElementById('totalUnassignedUsage').textContent = `${Math.round(unassignedUsage).toLocaleString()} kWh`;
-    }, 500);
-
-    // Charging % of Parked Time
-    fetch('https://lin-statesville-etru-dash-proxy.onrender.com/proxy', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        query: `
-          query($filter: TrailerAppointmentFilter, $parkSessionFilter: ParkSessionFilter) {
-            trailerAppointments(filter: $filter) {
-              nodes {
-                trailer {
-                  parkSessions(filter: $parkSessionFilter) {
-                    nodes {
-                      startTime
-                      endTime
-                      space { etruEnabled }
-                    }
+      query: `
+        query($filter: TrailerAppointmentFilter, $parkSessionFilter: ParkSessionFilter) {
+          trailerAppointments(filter: $filter) {
+            nodes {
+              trailer {
+                parkSessions(filter: $parkSessionFilter) {
+                  nodes {
+                    startTime
+                    endTime
+                    space { etruEnabled }
                   }
                 }
               }
             }
           }
-        `,
-        variables: {
-          filter: {
-            checkinTime: { greaterThan: isoStart, lessThanOrEqualTo: isoEnd }
-          },
-          parkSessionFilter: {
-            startTime: { greaterThan: isoStart }
-          }
         }
-      })
+      `,
+      variables: {
+        filter: {
+          checkinTime: { greaterThan: isoStart, lessThanOrEqualTo: isoEnd }
+        },
+        parkSessionFilter: {
+          startTime: { greaterThan: isoStart }
+        }
+      }
     })
-    .then(res => res.json())
-    .then(data => {
-      let totalParkMs = 0;
-      (data.data.trailerAppointments.nodes || []).forEach(t => {
-        (t.trailer.parkSessions.nodes || []).forEach(s => {
-          if (s.space?.etruEnabled && s.startTime && s.endTime) {
-            totalParkMs += (new Date(s.endTime) - new Date(s.startTime));
-          }
-        });
+  })
+  .then(res => res.json())
+  .then(data => {
+    let totalParkMs = 0;
+    (data.data.trailerAppointments.nodes || []).forEach(t => {
+      (t.trailer.parkSessions.nodes || []).forEach(s => {
+        if (s.space?.etruEnabled && s.startTime && s.endTime) {
+          totalParkMs += (new Date(s.endTime) - new Date(s.startTime));
+        }
       });
-      const chargePct = totalParkMs
-        ? Math.round((totalDurationMs / totalParkMs) * 100)
-        : 0;
-      document.getElementById('chargingPercent').textContent = `${chargePct}%`;
-    })
-    .catch(err => {
-      console.error('Charging % calc error:', err);
-      document.getElementById('chargingPercent').textContent = 'Error';
     });
-
-    checkAllComplete(); // ✅ Mark as complete
+    const chargePct = totalParkMs
+      ? Math.round((totalDurationMs / totalParkMs) * 100)
+      : 0;
+    document.getElementById('chargingPercent').textContent = `${chargePct}%`;
   })
   .catch(err => {
-    console.error('Submeter fetch error:', err);
-    checkAllComplete(); // ✅ Mark as complete
+    console.error('Charging % calc error:', err);
+    document.getElementById('chargingPercent').textContent = 'Error';
   });
+
+  checkAllComplete();
+})
+.catch(err => {
+  console.error('Submeter fetch error:', err);
+  checkAllComplete();
+});
 
   // Chart: Last 180 Days (separate from main loading)
   const chartStart = new Date(endDateStr);
