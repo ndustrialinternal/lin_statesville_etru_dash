@@ -335,18 +335,21 @@
       
       case 'last-7-days':
         endDate = new Date(now);
+        endDate.setDate(endDate.getDate() + 1)
         startDate = new Date(now);
         startDate.setDate(startDate.getDate() - 7);
         break;
       
       case 'last-30-days':
         endDate = new Date(now);
+        endDate.setDate(endDate.getDate() + 1)
         startDate = new Date(now);
         startDate.setDate(startDate.getDate() - 30);
         break;
       
       case 'last-90-days':
         endDate = new Date(now);
+        endDate.setDate(endDate.getDate() + 1)
         startDate = new Date(now);
         startDate.setDate(startDate.getDate() - 90);
         break;
@@ -354,6 +357,7 @@
       case 'ytd':
         startDate = new Date(now.getFullYear(), 0, 1);
         endDate = new Date(now);
+        endDate.setDate(endDate.getDate() + 1)
         break;
       
       case 'custom':
