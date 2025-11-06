@@ -503,7 +503,7 @@
           checkinTime: { greaterThan: isoStart, lessThanOrEqualTo: isoEnd }
         },
         parkSessionFilter: {
-          startTime: { greaterThan: isoStart }
+          startTime: { greaterThan: isoStart, , lessThanOrEqualTo: isoEnd }
         }
       }
     })
