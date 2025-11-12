@@ -297,10 +297,16 @@
       </div>
     </div>
 
+          <!-- ✅ Daily Consumption Bar Chart -->
+    <h2 class="section-title">Daily Energy Consumption</h2>
+    <canvas id="dailyConsumptionChart" height="300"></canvas>
+  </div>
+
     <!-- ✅ Chart at the bottom -->
     <h2 class="section-title">eTRU Trailer Appointments Over Time</h2>
     <canvas id="lineChart" height="300"></canvas>
-  </div>
+
+
 
 <script>
   const dateRangeSelect = document.getElementById('dateRange');
@@ -316,6 +322,7 @@
   customEndInput.max = todayStr;
 
   let lineChart;
+  let dailyConsumptionChart;
 
   // Function to calculate date range based on selection
   function getDateRange(rangeType) {
@@ -458,7 +465,7 @@
 
   // Track completion of all async operations
   let completedRequests = 0;
-  const totalRequests = 3; // Trailer, Facility Usage, Submeter (chart is separate)
+  const totalRequests = 3; // Trailer, Facility Usage, Submeter (charts are separate)
 
   function checkAllComplete() {
     completedRequests++;
@@ -563,7 +570,6 @@
   });
 
   // Total Facility Usage Query
- // Total Facility Usage Query
 const facilityUsageQuery = `
   query($from: String!, $to: String!) {
     submeters {
@@ -804,7 +810,115 @@ fetch('https://lin-statesville-etru-dash-proxy.onrender.com/proxy-submeter', {
     });
   })
   .catch(err => console.error('Chart data fetch error:', err));
+
+  // ✅ NEW: Fetch Daily Consumption Data for Bar Chart
+  fetchDailyConsumption(isoStart, isoEnd);
 }
+
+// ✅ NEW: Function to fetch and display daily consumption
+function fetchDailyConsumption(startDateStr, endDateStr) {
+  const dailyConsumptionQuery = `
+    query($from: String!, $to: String!) {
+      submeters {
+        usage(
+          from: $from
+          to: $to
+          aggregation: SUM
+          window: "1 day"
+          samplingWindow: "1 day"
+        ) {
+          nodes {
+            time
+            data
+          }
+        }
+      }
+    }
+  `;
+
+  fetch('https://lin-statesville-etru-dash-proxy.onrender.com/proxy-submeter', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      query: dailyConsumptionQuery,
+      variables: {
+        from: startDateStr.split('T')[0],
+        to: endDateStr.split('T')[0]
+      }
+    })
+  })
+  .then(res => res.json())
+  .then(data => {
+    const nodes = data?.data?.submeters?.usage?.nodes || [];
+    
+    // Prepare data for chart
+    const labels = [];
+    const consumptionData = [];
+
+    nodes.forEach(node => {
+      const date = new Date(node.time);
+      const dateLabel = date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+      labels.push(dateLabel);
+      consumptionData.push(Math.round(node.data));
+    });
+
+    // Create or update the bar chart
+    const ctx = document.getElementById('dailyConsumptionChart').getContext('2d');
+    if (dailyConsumptionChart) {
+      dailyConsumptionChart.destroy();
+    }
+    
+    dailyConsumptionChart = new Chart(ctx, {
+      type: 'bar',
+      data: {
+        labels: labels,
+        datasets: [{
+          label: 'Daily Consumption (kWh)',
+          data: consumptionData,
+          backgroundColor: '#2c7be5',
+          borderColor: '#1e5bb8',
+          borderWidth: 1
+        }]
+      },
+      options: {
+        responsive: true,
+        plugins: {
+          legend: { 
+            display: true,
+            position: 'top'
+          },
+          tooltip: {
+            callbacks: {
+              label: function(context) {
+                return `${context.parsed.y.toLocaleString()} kWh`;
+              }
+            }
+          }
+        },
+        scales: {
+          y: { 
+            beginAtZero: true,
+            ticks: {
+              callback: function(value) {
+                return value.toLocaleString() + ' kWh';
+              }
+            }
+          },
+          x: {
+            ticks: {
+              maxRotation: 45,
+              minRotation: 45
+            }
+          }
+        }
+      }
+    });
+  })
+  .catch(err => {
+    console.error('Daily consumption fetch error:', err);
+  });
+}
+
 // Export functionality
 document.getElementById('exportButton').addEventListener('click', async () => {
   const exportButton = document.getElementById('exportButton');
