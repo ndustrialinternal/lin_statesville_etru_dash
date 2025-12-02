@@ -734,35 +734,83 @@ const totalUsagePromise = fetch('https://lin-statesville-etru-dash-proxy.onrende
     return 0;
   }
 
- // ✅ Update submeter status lights
-const submeterNodes = data?.data?.submeters?.nodes || [];
-const lightsContainer = document.getElementById('submeterLights');
-lightsContainer.innerHTML = '';
+// ✅ Fetch submeter status with current date range (always get latest data)
+const now = new Date();
+const statusFrom = new Date(now.getTime() - 24 * 60 * 60 * 1000).toISOString().split('T')[0]; // 24 hours ago
+const statusTo = now.toISOString().split('T')[0]; // Today
 
-if (submeterNodes.length === 0) {
-  lightsContainer.innerHTML = '<span style="color: #94a3b8;">No submeters found</span>';
-} else {
-  // ✅ Sort submeters by label alphabetically
-  const sortedSubmeters = [...submeterNodes].sort((a, b) => {
-    const labelA = (a.label || 'Unknown').toLowerCase();
-    const labelB = (b.label || 'Unknown').toLowerCase();
-    return labelA.localeCompare(labelB);
-  });
+const submeterStatusQuery = `
+  query($from: String!, $to: String!) {
+    submeters {
+      nodes {
+        label
+        usage {
+          data(
+            from: $from
+            to: $to
+            aggregation: MAX
+            window: "15 minutes"
+            samplingWindow: "15 minutes"
+            last: 1
+          ) {
+            nodes {
+              data
+              time
+            }
+          }
+        }
+      }
+    }
+  }
+`;
 
-  sortedSubmeters.forEach(submeter => {
-    const label = submeter.label || 'Unknown';
-    const latestData = submeter.usage?.data?.nodes?.[0];
-    const dataValue = latestData?.data;
-    const isActive = dataValue !== undefined && dataValue > 0;
+fetch('https://lin-statesville-etru-dash-proxy.onrender.com/proxy-submeter', {
+  method: 'POST',
+  headers: { 'Content-Type': 'application/json' },
+  body: JSON.stringify({
+    query: submeterStatusQuery,
+    variables: {
+      from: statusFrom,  // ✅ Last 24 hours
+      to: statusTo       // ✅ Today
+    }
+  })
+})
+.then(res => res.json())
+.then(data => {
+  const submeterNodes = data?.data?.submeters?.nodes || [];
+  const lightsContainer = document.getElementById('submeterLights');
+  lightsContainer.innerHTML = '';
 
-    const lightElement = document.createElement('div');
-    lightElement.className = 'submeter-light';
-    lightElement.innerHTML = `
-      <div class="status-indicator ${isActive ? 'active' : 'inactive'}"></div>
-      <span class="submeter-label">${label}</span>
-    `;
-    lightsContainer.appendChild(lightElement);
-  });
+  if (submeterNodes.length === 0) {
+    lightsContainer.innerHTML = '<span style="color: #94a3b8;">No submeters found</span>';
+  } else {
+    const sortedSubmeters = [...submeterNodes].sort((a, b) => {
+      const labelA = (a.label || 'Unknown').toLowerCase();
+      const labelB = (b.label || 'Unknown').toLowerCase();
+      return labelA.localeCompare(labelB);
+    });
+
+    sortedSubmeters.forEach(submeter => {
+      const label = submeter.label || 'Unknown';
+      const latestData = submeter.usage?.data?.nodes?.[0];
+      const dataValue = latestData?.data;
+      const isActive = dataValue !== undefined && dataValue > 0;
+
+      const lightElement = document.createElement('div');
+      lightElement.className = 'submeter-light';
+      lightElement.innerHTML = `
+        <div class="status-indicator ${isActive ? 'active' : 'inactive'}"></div>
+        <span class="submeter-label">${label}</span>
+      `;
+      lightsContainer.appendChild(lightElement);
+    });
+  }
+})
+.catch(err => {
+  console.error('Submeter status fetch error:', err);
+  const lightsContainer = document.getElementById('submeterLights');
+  lightsContainer.innerHTML = '<span style="color: #ef4444;">Error loading submeter status</span>';
+});
 }
 
   // Calculate total usage
