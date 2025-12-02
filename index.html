@@ -1002,6 +1002,7 @@ fetch('https://lin-statesville-etru-dash-proxy.onrender.com/proxy-submeter', {
 }
 
 // ✅ NEW: Function to fetch and display daily consumption
+// ✅ NEW: Function to fetch and display daily consumption
 function fetchDailyConsumption(startDateStr, endDateStr) {
   const dailyConsumptionQuery = `
     query($from: String!, $to: String!) {
@@ -1042,8 +1043,13 @@ function fetchDailyConsumption(startDateStr, endDateStr) {
     const consumptionData = [];
 
     nodes.forEach(node => {
+      // ✅ FIX: Use UTC date to avoid timezone offset issues
       const date = new Date(node.time);
-      const dateLabel = date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+      const dateLabel = date.toLocaleDateString('en-US', { 
+        month: 'short', 
+        day: 'numeric',
+        timeZone: 'UTC'  // Add this to force UTC interpretation
+      });
       labels.push(dateLabel);
       consumptionData.push(Math.round(node.data));
     });
