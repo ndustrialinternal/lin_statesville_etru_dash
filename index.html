@@ -725,19 +725,27 @@ const totalUsagePromise = fetch('https://lin-statesville-etru-dash-proxy.onrende
   if (data.errors) {
     console.error('Facility usage query errors:', data.errors);
     document.getElementById('totalUsage').textContent = 'Error';
-    
-    // Show error state for lights
-    const lightsContainer = document.getElementById('submeterLights');
-    lightsContainer.innerHTML = '<span style="color: #ef4444;">Error loading submeter status</span>';
-    
     checkAllComplete();
     return 0;
   }
 
-// ✅ Fetch submeter status with current date range (always get latest data)
+  // Calculate total usage
+  const totalFacilityUsage = data?.data?.submeters?.usage?.aggregates?.SUM || 0;
+  document.getElementById('totalUsage').textContent = `${Math.round(totalFacilityUsage).toLocaleString()} kWh`;
+  checkAllComplete();
+  return totalFacilityUsage;
+})
+.catch(err => {
+  console.error('Facility usage fetch error:', err);
+  document.getElementById('totalUsage').textContent = 'Error';
+  checkAllComplete();
+  return 0;
+});
+
+// ✅ INSERT THE SUBMETER STATUS QUERY HERE (OUTSIDE the totalUsagePromise)
 const now = new Date();
-const statusFrom = new Date(now.getTime() - 24 * 60 * 60 * 1000).toISOString().split('T')[0]; // 24 hours ago
-const statusTo = now.toISOString().split('T')[0]; // Today
+const statusFrom = new Date(now.getTime() - 24 * 60 * 60 * 1000).toISOString().split('T')[0];
+const statusTo = now.toISOString().split('T')[0];
 
 const submeterStatusQuery = `
   query($from: String!, $to: String!) {
@@ -770,8 +778,8 @@ fetch('https://lin-statesville-etru-dash-proxy.onrender.com/proxy-submeter', {
   body: JSON.stringify({
     query: submeterStatusQuery,
     variables: {
-      from: statusFrom,  // ✅ Last 24 hours
-      to: statusTo       // ✅ Today
+      from: statusFrom,
+      to: statusTo
     }
   })
 })
@@ -811,26 +819,8 @@ fetch('https://lin-statesville-etru-dash-proxy.onrender.com/proxy-submeter', {
   const lightsContainer = document.getElementById('submeterLights');
   lightsContainer.innerHTML = '<span style="color: #ef4444;">Error loading submeter status</span>';
 });
-}
 
-  // Calculate total usage
-  const totalFacilityUsage = data?.data?.submeters?.usage?.aggregates?.SUM || 0;
-  document.getElementById('totalUsage').textContent = `${Math.round(totalFacilityUsage).toLocaleString()} kWh`;
-  checkAllComplete();
-  return totalFacilityUsage;
-})
-.catch(err => {
-  console.error('Facility usage fetch error:', err);
-  document.getElementById('totalUsage').textContent = 'Error';
-  
-  // Show error state for lights
-  const lightsContainer = document.getElementById('submeterLights');
-  lightsContainer.innerHTML = '<span style="color: #ef4444;">Error loading submeter status</span>';
-  
-  checkAllComplete();
-  return 0;
-});
-// Submeter Session Metrics (Charging Time)
+// Submeter Session Metrics (Charging Time) - continues here
 const submeterQuery = `
   query($filter: SubmeterSessionFilter) {
     submeterSessions(filter: $filter) {
