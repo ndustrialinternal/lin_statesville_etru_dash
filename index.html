@@ -1644,210 +1644,329 @@
       console.error('Submeter fetch error:', err);
       checkAllComplete();
     });
-
-    // Charts
-    const chartStart = new Date(endDateStr);
-    chartStart.setDate(chartStart.getDate() - 180);
-
-    fetch('https://lin-statesville-etru-dash-proxy.onrender.com/proxy', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        query: trailerQuery,
-        variables: {
-          filter: { 
-            checkinTime: { greaterThan: chartStart.toISOString() } 
-          },
-          parkSessionFilter: {
-            startTime: { greaterThan: chartStart.toISOString() }
-          }
-        }
-      })
-    })
-    .then(res => res.json())
-    .then(chartData => {
-      const chartTrailers = chartData?.data?.trailerAppointments?.nodes || [];
-      const bucketLabels = [];
-      const bucketCounts = {};
-      const bucketRanges = [];
-      let current = new Date(chartStart.getFullYear(), chartStart.getMonth(), 1);
-
-      for (let i = 0; i < 6; i++) {
-        const start = new Date(current.getFullYear(), current.getMonth(), 1);
-        const end = new Date(current.getFullYear(), current.getMonth() + 1, 1);
-        const label = start.toLocaleDateString('en-US', { month: 'short', year: 'numeric' });
-        bucketLabels.push(label);
-        bucketCounts[label] = 0;
-        bucketRanges.push({ start, end, label });
-        current.setMonth(current.getMonth() + 1);
-      }
-
-      chartTrailers.forEach(t => {
-        if (!t.trailer?.supportEtru || !t.checkinTime) return;
-        const checkinDate = new Date(t.checkinTime);
-        bucketRanges.forEach(({ start, end, label }) => {
-          if (checkinDate >= start && checkinDate < end) {
-            bucketCounts[label]++;
-          }
-        });
-      });
-
-      const ctx = document.getElementById('lineChart').getContext('2d');
-      if (lineChart) lineChart.destroy();
-      lineChart = new Chart(ctx, {
-        type: 'line',
-        data: {
-          labels: bucketLabels,
-          datasets: [{
-            label: 'eTRU Appointments',
-            data: bucketLabels.map(l => bucketCounts[l]),
-            borderColor: '#2c7be5',
-            borderWidth: 2,
-            fill: false,
-            tension: 0.3,
-            pointBackgroundColor: '#2c7be5'
-          }]
-        },
-        options: {
-          responsive: true,
-          plugins: {
-            legend: { display: false },
-            tooltip: {
-              callbacks: {
-                title: items => {
-                  const { dataIndex } = items[0];
-                  const { start, end } = bucketRanges[dataIndex];
-                  return `${start.toLocaleDateString()} – ${end.toLocaleDateString()}`;
-                },
-                label: ctx => `${ctx.parsed.y} appointments`
-              }
-            }
-          },
-          scales: {
-            y: { beginAtZero: true, ticks: { precision: 0 } }
-          }
-        }
-      });
-    })
-    .catch(err => console.error('Chart data fetch error:', err));
-
-    fetchDailyConsumption(isoStart, isoEnd);
   }
 
-  function fetchDailyConsumption(startDateStr, endDateStr) {
-    const dailyConsumptionQuery = `
-      query dailySubConsumption($from: String!, $to: String!) {
-        submeters {
-          usage(
-            from: $from
-            to: $to
-            aggregation: SUM
-            window: "1 day"
-            samplingWindow: "1 day"
-          ) {
-            nodes {
-              time
-              data
-            }
-          }
-        }
-      }
-    `;
-
-    fetch('https://lin-statesville-etru-dash-proxy.onrender.com/proxy-submeter', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        query: dailyConsumptionQuery,
-        variables: {
-          from: startDateStr.split('T')[0],
-          to: endDateStr.split('T')[0]
-        }
-      })
-    })
-    .then(res => res.json())
-    .then(data => {
-      const nodes = data?.data?.submeters?.usage?.nodes || [];
-      
-      const labels = [];
-      const consumptionData = [];
-
-      nodes.forEach(node => {
-        const date = new Date(node.time);
-        const dateLabel = date.toLocaleDateString('en-US', { 
-          month: 'short', 
-          day: 'numeric',
-          timeZone: 'UTC'
-        });
-        labels.push(dateLabel);
-        consumptionData.push(Math.round(node.data));
-      });
-
-      const ctx = document.getElementById('dailyConsumptionChart').getContext('2d');
-      if (dailyConsumptionChart) {
-        dailyConsumptionChart.destroy();
-      }
-      
-      dailyConsumptionChart = new Chart(ctx, {
-        type: 'bar',
-        data: {
-          labels: labels,
-          datasets: [{
-            label: 'Daily Consumption (kWh)',
-            data: consumptionData,
-            backgroundColor: '#2c7be5',
-            borderColor: '#1e5bb8',
-            borderWidth: 1
-          }]
-        },
-        options: {
-          responsive: true,
-          plugins: {
-            legend: { 
-              display: true,
-              position: 'top'
-            },
-            tooltip: {
-              callbacks: {
-                label: function(context) {
-                  return `${context.parsed.y.toLocaleString()} kWh`;
-                }
-              }
-            }
-          },
-          scales: {
-            y: { 
-              beginAtZero: true,
-              ticks: {
-                callback: function(value) {
-                  return value.toLocaleString() + ' kWh';
-                }
-              }
-            },
-            x: {
-              ticks: {
-                maxRotation: 45,
-                minRotation: 45
-              }
-            }
-          }
-        }
-      });
-    })
-    .catch(err => {
-      console.error('Daily consumption fetch error:', err);
-    });
-  }
-
-  // Export functionality (simplified - keeping same structure as original)
+  // Export functionality
   document.getElementById('exportKPIsButton').addEventListener('click', async () => {
     exportDropdownMenu.style.display = 'none';
-    alert('Export KPIs functionality - connect to your existing implementation');
+    
+    // Calculate last 6 months
+    const endDate = new Date();
+    const startDate = new Date();
+    startDate.setMonth(startDate.getMonth() - 6);
+    
+    const isoStart = startDate.toISOString().split('T')[0];
+    const isoEnd = endDate.toISOString().split('T')[0];
+    
+    loadingOverlay.classList.add('active');
+    
+    try {
+      // Fetch trailer data
+      const trailerQuery = `
+        query trailerApptsParkSess($filter: TrailerAppointmentFilter, $parkSessionFilter: ParkSessionFilter) {
+          trailerAppointments(filter: $filter) {
+            nodes {
+              checkinTime
+              trailer {
+                carrierCode
+                supportEtru
+                parkSessions(filter: $parkSessionFilter) {
+                  nodes {
+                    startTime
+                    endTime
+                    space {
+                      etruEnabled
+                      spaceCategory {
+                        name
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      `;
+      
+      const trailerResponse = await fetch('https://lin-statesville-etru-dash-proxy.onrender.com/proxy', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          query: trailerQuery,
+          variables: {
+            filter: {
+              checkinTime: { greaterThan: isoStart, lessThanOrEqualTo: isoEnd }
+            },
+            parkSessionFilter: {
+              startTime: { greaterThan: isoStart }
+            }
+          }
+        })
+      });
+      
+      const trailerData = await trailerResponse.json();
+      const trailers = trailerData?.data?.trailerAppointments?.nodes || [];
+      
+      // Fetch submeter sessions
+      const submeterQuery = `
+        query subSess($filter: SubmeterSessionFilter) {
+          submeterSessions(filter: $filter) {
+            totalCount
+            nodes {
+              id
+              startTime
+              endTime
+              associatedCustomerId
+              usage { aggregates { SUM } }
+            }
+          }
+        }
+      `;
+      
+      const submeterResponse = await fetch('https://lin-statesville-etru-dash-proxy.onrender.com/proxy-submeter', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          query: submeterQuery,
+          variables: {
+            filter: {
+              startTime: { greaterThanOrEqualTo: isoStart, lessThanOrEqualTo: isoEnd }
+            }
+          }
+        })
+      });
+      
+      const submeterData = await submeterResponse.json();
+      const sessions = submeterData?.data?.submeterSessions?.nodes || [];
+      const totalSessionCount = submeterData?.data?.submeterSessions?.totalCount || 0;
+      
+      // Fetch facility usage
+      const facilityUsageQuery = `
+        query submeterUsageWithAgg($from: String!, $to: String!) {
+          submeters {
+            usage(from: $from, to: $to, aggregation: SUM) {
+              aggregates {
+                SUM
+              }
+            }
+          }
+        }
+      `;
+      
+      const facilityResponse = await fetch('https://lin-statesville-etru-dash-proxy.onrender.com/proxy-submeter', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          query: facilityUsageQuery,
+          variables: {
+            from: isoStart,
+            to: isoEnd
+          }
+        })
+      });
+      
+      const facilityData = await facilityResponse.json();
+      const totalFacilityUsage = facilityData?.data?.submeters?.usage?.aggregates?.SUM || 0;
+      
+      // Calculate KPIs
+      const totalTrailers = trailers.length;
+      const etruTrailers = trailers.filter(t => t.trailer?.supportEtru).length;
+      const etruPercent = totalTrailers > 0 ? Math.round((etruTrailers / totalTrailers) * 100) : 0;
+      
+      let correctAssignments = 0;
+      let missedAssignments = 0;
+      let totalYardSessions = 0;
+      
+      trailers.forEach(t => {
+        if (!t.trailer?.supportEtru) return;
+        (t.trailer.parkSessions.nodes || []).forEach(s => {
+          if (s.space?.spaceCategory?.name?.toLowerCase() === 'yard') {
+            totalYardSessions++;
+            if (s.space.etruEnabled) {
+              correctAssignments++;
+            } else {
+              missedAssignments++;
+            }
+          }
+        });
+      });
+      
+      const assignmentRate = totalYardSessions > 0 ? Math.round((correctAssignments / totalYardSessions) * 100) : 0;
+      
+      let assignedDurationMs = 0;
+      let unassignedDurationMs = 0;
+      let totalDurationMs = 0;
+      let totalAssignedUsage = 0;
+      let totalUnassignedUsage = 0;
+      
+      sessions.forEach(s => {
+        if (s.startTime && s.endTime) {
+          const duration = new Date(s.endTime) - new Date(s.startTime);
+          totalDurationMs += duration;
+          
+          if (s.associatedCustomerId === null) {
+            unassignedDurationMs += duration;
+          } else {
+            assignedDurationMs += duration;
+          }
+        }
+        
+        const sessionUsage = s.usage?.aggregates?.SUM || 0;
+        if (s.associatedCustomerId === null) {
+          totalUnassignedUsage += sessionUsage;
+        } else {
+          totalAssignedUsage += sessionUsage;
+        }
+      });
+      
+      const assignedHours = Math.round(assignedDurationMs / (1000 * 60 * 60));
+      const unassignedHours = Math.round(unassignedDurationMs / (1000 * 60 * 60));
+      const totalHours = Math.round(totalDurationMs / (1000 * 60 * 60));
+      
+      const averageDurationHours = totalSessionCount > 0 ? (totalDurationMs / (1000 * 60 * 60)) / totalSessionCount : 0;
+      const avgHours = Math.floor(averageDurationHours);
+      const avgMinutes = Math.round((averageDurationHours - avgHours) * 60);
+      const avgDurationStr = avgHours > 0 ? `${avgHours}h ${avgMinutes}m` : `${avgMinutes}m`;
+      
+      // Create CSV
+      const csvContent = [
+        ['Lineage - Statesville eTRU KPIs'],
+        ['Period', `${isoStart} to ${isoEnd}`],
+        ['Generated', new Date().toLocaleString()],
+        [],
+        ['Metric', 'Value'],
+        ['Total Trailers', totalTrailers],
+        ['eTRU Trailers', etruTrailers],
+        ['eTRU-Enabled Trailer %', `${etruPercent}%`],
+        ['Correct eTRU Assignments', correctAssignments],
+        ['eTRU Missed Assignments', missedAssignments],
+        ['eTRU Assignment Rate', `${assignmentRate}%`],
+        ['Assigned Charging Time', `${assignedHours} hrs`],
+        ['Unassigned Charging Time', `${unassignedHours} hrs`],
+        ['Total Charging Time', `${totalHours} hrs`],
+        ['Number of Sessions', totalSessionCount],
+        ['Average Session Duration', avgDurationStr],
+        ['Total Assigned Usage', `${Math.round(totalAssignedUsage)} kWh`],
+        ['Total Unassigned Usage', `${Math.round(totalUnassignedUsage)} kWh`],
+        ['Total Usage (Facility)', `${Math.round(totalFacilityUsage)} kWh`]
+      ].map(row => row.join(',')).join('\n');
+      
+      // Download CSV
+      const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+      const link = document.createElement('a');
+      const url = URL.createObjectURL(blob);
+      link.setAttribute('href', url);
+      link.setAttribute('download', `eTRU_KPIs_Last_6_Months_${new Date().toISOString().split('T')[0]}.csv`);
+      link.style.visibility = 'hidden';
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      
+    } catch (error) {
+      console.error('Export KPIs error:', error);
+      alert('Error exporting KPIs. Please try again.');
+    } finally {
+      loadingOverlay.classList.remove('active');
+    }
   });
 
   document.getElementById('exportSessionsButton').addEventListener('click', async () => {
     exportDropdownMenu.style.display = 'none';
-    alert('Export Sessions functionality - connect to your existing implementation');
+    
+    if (!currentDateRange.start || !currentDateRange.end) {
+      alert('Please select a date range first.');
+      return;
+    }
+    
+    loadingOverlay.classList.add('active');
+    
+    try {
+      const submeterQuery = `
+        query subSess($filter: SubmeterSessionFilter) {
+          submeterSessions(filter: $filter) {
+            nodes {
+              id
+              startTime
+              endTime
+              associatedCustomerId
+              usage { aggregates { SUM } }
+              submeter {
+                label
+              }
+            }
+          }
+        }
+      `;
+      
+      const response = await fetch('https://lin-statesville-etru-dash-proxy.onrender.com/proxy-submeter', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          query: submeterQuery,
+          variables: {
+            filter: {
+              startTime: { greaterThanOrEqualTo: currentDateRange.start, lessThanOrEqualTo: currentDateRange.end }
+            }
+          }
+        })
+      });
+      
+      const data = await response.json();
+      const sessions = data?.data?.submeterSessions?.nodes || [];
+      
+      if (sessions.length === 0) {
+        alert('No sessions found for the selected period.');
+        loadingOverlay.classList.remove('active');
+        return;
+      }
+      
+      // Create CSV header
+      const csvRows = [
+        ['Session ID', 'Submeter', 'Start Time', 'End Time', 'Duration (hours)', 'Customer ID', 'Usage (kWh)']
+      ];
+      
+      sessions.forEach(session => {
+        const startTime = session.startTime || '';
+        const endTime = session.endTime || '';
+        const durationHours = (startTime && endTime) 
+          ? ((new Date(endTime) - new Date(startTime)) / (1000 * 60 * 60)).toFixed(2)
+          : '';
+        const customerId = session.associatedCustomerId || 'Unassigned';
+        const usage = session.usage?.aggregates?.SUM ? Math.round(session.usage.aggregates.SUM) : 0;
+        const submeter = session.submeter?.label || 'Unknown';
+        
+        csvRows.push([
+          session.id,
+          submeter,
+          startTime,
+          endTime,
+          durationHours,
+          customerId,
+          usage
+        ]);
+      });
+      
+      const csvContent = csvRows.map(row => 
+        row.map(cell => `"${cell}"`).join(',')
+      ).join('\n');
+      
+      // Download CSV
+      const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+      const link = document.createElement('a');
+      const url = URL.createObjectURL(blob);
+      link.setAttribute('href', url);
+      link.setAttribute('download', `eTRU_Sessions_${currentDateRange.start}_to_${currentDateRange.end}.csv`);
+      link.style.visibility = 'hidden';
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      
+    } catch (error) {
+      console.error('Export sessions error:', error);
+      alert('Error exporting sessions. Please try again.');
+    } finally {
+      loadingOverlay.classList.remove('active');
+    }
   });
 
   // Initial load
