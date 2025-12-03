@@ -1889,6 +1889,9 @@
               startTime
               endTime
               associatedCustomerId
+              associatedCustomer {
+                name
+              }
               usage { aggregates { SUM } }
               submeter {
                 label
@@ -1922,7 +1925,7 @@
       
       // Create CSV header
       const csvRows = [
-        ['Session ID', 'Submeter', 'Start Time', 'End Time', 'Duration (hours)', 'Customer ID', 'Usage (kWh)']
+        ['Session ID', 'Submeter', 'Start Time', 'End Time', 'Duration (hours)', 'Customer', 'Usage (kWh)']
       ];
       
       sessions.forEach(session => {
@@ -1931,7 +1934,7 @@
         const durationHours = (startTime && endTime) 
           ? ((new Date(endTime) - new Date(startTime)) / (1000 * 60 * 60)).toFixed(2)
           : '';
-        const customerId = session.associatedCustomerId || 'Unassigned';
+        const customer = session.associatedCustomer?.name || 'Unassigned';
         const usage = session.usage?.aggregates?.SUM ? Math.round(session.usage.aggregates.SUM) : 0;
         const submeter = session.submeter?.label || 'Unknown';
         
@@ -1941,7 +1944,7 @@
           startTime,
           endTime,
           durationHours,
-          customerId,
+          customer,
           usage
         ]);
       });
