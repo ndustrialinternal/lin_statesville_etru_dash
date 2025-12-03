@@ -643,7 +643,7 @@
             <h2>Total Unassigned Usage</h2>
             <span class="info-icon">
               i
-              <span class="info-tooltip">Energy consumption (kWh) that could not be attributed to specific customers. Calculated as Total Usage minus Assigned Usage.</span>
+              <span class="info-tooltip">Energy consumption (kWh) that could not be attributed to specific customers.</span>
             </span>
           </div>
           <div class="value" id="totalUnassignedUsage">Loading...</div>
@@ -653,7 +653,7 @@
             <h2>Total Usage</h2>
             <span class="info-icon">
               i
-              <span class="info-tooltip">Total energy consumption (kWh) from all submeters during the selected period, regardless of assignment status.</span>
+              <span class="info-tooltip">Total energy consumption (kWh) from all submeters during the selected period, regardless of assignment status or association with a charging session.</span>
             </span>
           </div>
           <div class="value" id="totalUsage">Loading...</div>
@@ -1521,15 +1521,22 @@
       }
 
       let totalAssignedUsage = 0;
+      let totalUnassignedUsage = 0;
+      
       sessions.forEach(s => {
-        totalAssignedUsage += s.usage?.aggregates?.SUM || 0;
+        const sessionUsage = s.usage?.aggregates?.SUM || 0;
+        if (s.associatedCustomerId === null) {
+          totalUnassignedUsage += sessionUsage;
+        } else {
+          totalAssignedUsage += sessionUsage;
+        }
       });
+      
       const roundedAssignedUsage = Math.round(totalAssignedUsage);
+      const roundedUnassignedUsage = Math.round(totalUnassignedUsage);
+      
       document.getElementById('totalAssignedUsage').textContent = `${roundedAssignedUsage.toLocaleString()} kWh`;
-
-      const totalUsage = await totalUsagePromise;
-      const unassignedUsage = Math.max(0, Math.round(totalUsage) - roundedAssignedUsage);
-      document.getElementById('totalUnassignedUsage').textContent = `${unassignedUsage.toLocaleString()} kWh`;
+      document.getElementById('totalUnassignedUsage').textContent = `${roundedUnassignedUsage.toLocaleString()} kWh`;
 
       // Generate time-series data for charging time metrics
       const sessionBucketSize = getTimeBucketSize(isoStart, isoEnd);
