@@ -745,7 +745,7 @@ const totalUsagePromise = fetch('https://lin-statesville-etru-dash-proxy.onrende
 // ✅ INSERT THE SUBMETER STATUS QUERY HERE (OUTSIDE the totalUsagePromise)
 const now = new Date();
 const statusFrom = new Date(now.getTime() - 24 * 60 * 60 * 1000).toISOString().split('T')[0];
-const statusTo = now.toISOString().split('T')[0];
+const statusTo = new Date(now.getTime() + 24 * 60 * 60 * 1000).toISOString().split('T')[0];
 
 const submeterStatusQuery = `
   query($from: String!, $to: String!) {
