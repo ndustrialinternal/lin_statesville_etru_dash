@@ -80,14 +80,14 @@
     }
 
     .metric-card h2 {
-      font-size: 1.5rem;
-      color: rgba(0, 0, 0, 0.6);
-      margin: 0 0 0.5rem;
-      font-weight: 400;
-      white-space: nowrap;
-      overflow: hidden;
-      text-overflow: ellipsis;
-    }
+  font-size: 1.5rem;
+  color: rgba(0, 0, 0, 0.6);
+  margin: 0; /* Changed from 0 0 0.5rem */
+  font-weight: 400;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
 
     .metric-card .value {
       font-size: 3.25rem;
@@ -240,6 +240,70 @@
   font-weight: 500;
   color: #2b2f32;
 }
+
+.metric-card-header {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin-bottom: 0.5rem;
+}
+
+.info-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background-color: #94a3b8;
+  color: white;
+  font-size: 0.75rem;
+  font-weight: 600;
+  cursor: help;
+  position: relative;
+  flex-shrink: 0;
+}
+
+.info-icon:hover {
+  background-color: #64748b;
+}
+
+.info-tooltip {
+  visibility: hidden;
+  opacity: 0;
+  position: absolute;
+  bottom: 125%;
+  left: 50%;
+  transform: translateX(-50%);
+  background-color: #1e293b;
+  color: white;
+  padding: 0.75rem;
+  border-radius: 6px;
+  font-size: 0.875rem;
+  font-weight: 400;
+  width: 250px;
+  z-index: 1000;
+  box-shadow: 0 4px 6px rgba(0, 0, 0, 0.2);
+  transition: opacity 0.2s, visibility 0.2s;
+  text-align: left;
+  line-height: 1.4;
+}
+
+.info-tooltip::after {
+  content: "";
+  position: absolute;
+  top: 100%;
+  left: 50%;
+  transform: translateX(-50%);
+  border-width: 6px;
+  border-style: solid;
+  border-color: #1e293b transparent transparent transparent;
+}
+
+.info-icon:hover .info-tooltip {
+  visibility: visible;
+  opacity: 1;
+}
   </style>
 </head>
 <body>
@@ -305,75 +369,174 @@
 
  <!-- ✅ SECTION 1: eTRU Entry -->
 <div class="dashboard-section">
-  <h2 class="section-header">eTRU Entry</h2>
-  <div class="card-container">
-    <div class="metric-card">
-      <h2>Total Trailers</h2>
-      <div class="value" id="totalTrailers">Loading...</div>
-    </div>
-    <div class="metric-card">
-      <h2>eTRU Trailers</h2>
-      <div class="value" id="count1">Loading...</div>
-    </div>
-    <div class="metric-card">
-      <h2>eTRU-Enabled Trailer %</h2>
-      <div class="value" id="percentEtruEnabled">Loading...</div>
+    <h2 class="section-header">eTRU Entry</h2>
+    <div class="card-container">
+      <div class="metric-card">
+        <div class="metric-card-header">
+          <h2>Total Trailers</h2>
+          <span class="info-icon">
+            i
+            <span class="info-tooltip">Total number of trailer appointments during the selected date range.</span>
+          </span>
+        </div>
+        <div class="value" id="totalTrailers">Loading...</div>
+      </div>
+      <div class="metric-card">
+        <div class="metric-card-header">
+          <h2>eTRU Trailers</h2>
+          <span class="info-icon">
+            i
+            <span class="info-tooltip">Number of trailers equipped with electric Truck Refrigeration Units (eTRU) that checked in during the selected period.</span>
+          </span>
+        </div>
+        <div class="value" id="count1">Loading...</div>
+      </div>
+      <div class="metric-card">
+        <div class="metric-card-header">
+          <h2>eTRU-Enabled Trailer %</h2>
+          <span class="info-icon">
+            i
+            <span class="info-tooltip">Percentage of total trailer appointments that are eTRU-capable. Calculated as (eTRU Trailers / Total Trailers) × 100.</span>
+          </span>
+        </div>
+        <div class="value" id="percentEtruEnabled">Loading...</div>
+      </div>
     </div>
   </div>
-</div>
-
- <!-- ✅ SECTION 2: eTRU Assignment -->
-<div class="dashboard-section">
-  <h2 class="section-header">eTRU Assignment</h2>
-  <div class="card-container">
-    <div class="metric-card">
-      <h2>Correct eTRU Assignments</h2>
-      <div class="value" id="correctAssignments">Loading...</div>
-    </div>
-    <div class="metric-card">
-      <h2>eTRU Missed Assignments</h2>
-      <div class="value" id="count2">Loading...</div>
-    </div>
-    <div class="metric-card">
-      <h2>eTRU Assignment Rate</h2>
-      <div class="value" id="count3">Loading...</div>
+  
+  <!-- ✅ SECTION 2: eTRU Assignment -->
+  <div class="dashboard-section">
+    <h2 class="section-header">eTRU Assignment</h2>
+    <div class="card-container">
+      <div class="metric-card">
+        <div class="metric-card-header">
+          <h2>Correct eTRU Assignments</h2>
+          <span class="info-icon">
+            i
+            <span class="info-tooltip">Number of times eTRU-capable trailers were parked in yard spaces with charging infrastructure available.</span>
+          </span>
+        </div>
+        <div class="value" id="correctAssignments">Loading...</div>
+      </div>
+      <div class="metric-card">
+        <div class="metric-card-header">
+          <h2>eTRU Missed Assignments</h2>
+          <span class="info-icon">
+            i
+            <span class="info-tooltip">Number of times eTRU-capable trailers were parked in yard spaces without charging infrastructure. These represent missed charging opportunities.</span>
+          </span>
+        </div>
+        <div class="value" id="count2">Loading...</div>
+      </div>
+      <div class="metric-card">
+        <div class="metric-card-header">
+          <h2>eTRU Assignment Rate</h2>
+          <span class="info-icon">
+            i
+            <span class="info-tooltip">Percentage of eTRU trailers correctly assigned to charging-enabled spaces. Calculated as (Correct Assignments / Total Yard Sessions) × 100.</span>
+          </span>
+        </div>
+        <div class="value" id="count3">Loading...</div>
+      </div>
     </div>
   </div>
-</div>
-
+  
   <!-- ✅ SECTION 3: Charging Time -->
   <div class="dashboard-section">
     <h2 class="section-header">Charging Time</h2>
     <div class="card-container">
       <div class="metric-card">
-        <h2>Assigned Charging Time</h2>
+        <div class="metric-card-header">
+          <h2>Assigned Charging Time</h2>
+          <span class="info-icon">
+            i
+            <span class="info-tooltip">Total hours that charging sessions were associated with a specific customer during the selected period.</span>
+          </span>
+        </div>
         <div class="value" id="assignedChargingTime">Loading...</div>
       </div>
       <div class="metric-card">
-        <h2>Unassigned Charging Time</h2>
+        <div class="metric-card-header">
+          <h2>Unassigned Charging Time</h2>
+          <span class="info-icon">
+            i
+            <span class="info-tooltip">Total hours of charging sessions that could not be attributed to a specific customer.</span>
+          </span>
+        </div>
         <div class="value" id="unassignedChargingTime">Loading...</div>
       </div>
       <div class="metric-card">
-        <h2>Total Charging Time</h2>
+        <div class="metric-card-header">
+          <h2>Total Charging Time</h2>
+          <span class="info-icon">
+            i
+            <span class="info-tooltip">Combined total of all charging session hours, both assigned and unassigned, during the selected period.</span>
+          </span>
+        </div>
         <div class="value" id="totalChargingTime">Loading...</div>
       </div>
     </div>
   </div>
 
+  <!-- ✅ SECTION 3.5: Charging Sessions -->
+<div class="dashboard-section">
+    <h2 class="section-header">Charging Sessions</h2>
+    <div class="card-container">
+      <div class="metric-card">
+        <div class="metric-card-header">
+          <h2>Number of Sessions</h2>
+          <span class="info-icon">
+            i
+            <span class="info-tooltip">Total number of charging sessions recorded during the selected period.</span>
+          </span>
+        </div>
+        <div class="value" id="numberOfSessions">Loading...</div>
+      </div>
+      <div class="metric-card">
+        <div class="metric-card-header">
+          <h2>Average Session Duration</h2>
+          <span class="info-icon">
+            i
+            <span class="info-tooltip">Average length of charging sessions, calculated as Total Charging Time divided by Number of Sessions.</span>
+          </span>
+        </div>
+        <div class="value" id="averageSessionDuration">Loading...</div>
+      </div>
+    </div>
+  </div>
+  
   <!-- ✅ SECTION 4: Consumption -->
   <div class="dashboard-section">
     <h2 class="section-header">Consumption</h2>
     <div class="card-container">
       <div class="metric-card">
-        <h2>Total Assigned Usage</h2>
+        <div class="metric-card-header">
+          <h2>Total Assigned Usage</h2>
+          <span class="info-icon">
+            i
+            <span class="info-tooltip">Total energy consumption (kWh) from charging sessions that were associated with specific customers.</span>
+          </span>
+        </div>
         <div class="value" id="totalAssignedUsage">Loading...</div>
       </div>
       <div class="metric-card">
-        <h2>Total Unassigned Usage</h2>
+        <div class="metric-card-header">
+          <h2>Total Unassigned Usage</h2>
+          <span class="info-icon">
+            i
+            <span class="info-tooltip">Energy consumption (kWh) that could not be attributed to specific customers. Calculated as Total Usage minus Assigned Usage.</span>
+          </span>
+        </div>
         <div class="value" id="totalUnassignedUsage">Loading...</div>
       </div>
       <div class="metric-card">
-        <h2>Total Usage</h2>
+        <div class="metric-card-header">
+          <h2>Total Usage</h2>
+          <span class="info-icon">
+            i
+            <span class="info-tooltip">Total energy consumption (kWh) from all submeters during the selected period, regardless of assignment status.</span>
+          </span>
+        </div>
         <div class="value" id="totalUsage">Loading...</div>
       </div>
     </div>
@@ -578,7 +741,7 @@
   }
 
   const trailerQuery = `
-    query($filter: TrailerAppointmentFilter, $parkSessionFilter: ParkSessionFilter) {
+    query trailerApptsParkSess($filter: TrailerAppointmentFilter, $parkSessionFilter: ParkSessionFilter) {
       trailerAppointments(filter: $filter) {
         nodes {
           checkinTime
@@ -679,7 +842,7 @@ document.getElementById('count3').textContent = `${assignmentRate}%`;
   // Total Facility Usage Query
 // Total Facility Usage Query with Submeter Status
 const facilityUsageQuery = `
-  query($from: String!, $to: String!) {
+  query submeterUsageWithAgg($from: String!, $to: String!) {
     submeters {
       nodes {
         label
@@ -748,7 +911,7 @@ const statusFrom = new Date(now.getTime() - 24 * 60 * 60 * 1000).toISOString().s
 const statusTo = new Date(now.getTime() + 24 * 60 * 60 * 1000).toISOString().split('T')[0];
 
 const submeterStatusQuery = `
-  query($from: String!, $to: String!) {
+  query submeterPoweredStatus($from: String!, $to: String!) {
     submeters {
       nodes {
         label
@@ -822,8 +985,9 @@ fetch('https://lin-statesville-etru-dash-proxy.onrender.com/proxy-submeter', {
 
 // Submeter Session Metrics (Charging Time) - continues here
 const submeterQuery = `
-  query($filter: SubmeterSessionFilter) {
+  query subSess($filter: SubmeterSessionFilter) {
     submeterSessions(filter: $filter) {
+      totalCount
       nodes {
         id
         startTime
@@ -850,6 +1014,7 @@ fetch('https://lin-statesville-etru-dash-proxy.onrender.com/proxy-submeter', {
 .then(res => res.json())
 .then(async data => {
   const sessions = data?.data?.submeterSessions?.nodes || [];
+  const totalSessionCount = data?.data?.submeterSessions?.totalCount || 0; // ✅ ADD THIS
 
   let assignedDurationMs = 0;
   let unassignedDurationMs = 0;
@@ -877,6 +1042,24 @@ fetch('https://lin-statesville-etru-dash-proxy.onrender.com/proxy-submeter', {
   document.getElementById('unassignedChargingTime').textContent = `${unassignedHours.toLocaleString()} hrs`;
   document.getElementById('totalChargingTime').textContent = `${totalHours.toLocaleString()} hrs`;
 
+  // ✅ NEW: Update charging sessions metrics
+  document.getElementById('numberOfSessions').textContent = totalSessionCount.toLocaleString();
+  
+  // Calculate average session duration
+  const averageDurationHours = totalSessionCount > 0 
+    ? (totalDurationMs / (1000 * 60 * 60)) / totalSessionCount 
+    : 0;
+  
+  // Format as hours and minutes
+  const avgHours = Math.floor(averageDurationHours);
+  const avgMinutes = Math.round((averageDurationHours - avgHours) * 60);
+  
+  if (avgHours > 0) {
+    document.getElementById('averageSessionDuration').textContent = `${avgHours}h ${avgMinutes}m`;
+  } else {
+    document.getElementById('averageSessionDuration').textContent = `${avgMinutes}m`;
+  }
+
   let totalAssignedUsage = 0;
   sessions.forEach(s => {
     totalAssignedUsage += s.usage?.aggregates?.SUM || 0;
@@ -895,7 +1078,7 @@ fetch('https://lin-statesville-etru-dash-proxy.onrender.com/proxy-submeter', {
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
       query: `
-        query($filter: TrailerAppointmentFilter, $parkSessionFilter: ParkSessionFilter) {
+        query trailAppAndPark2($filter: TrailerAppointmentFilter, $parkSessionFilter: ParkSessionFilter) {
           trailerAppointments(filter: $filter) {
             nodes {
               trailer {
@@ -1042,7 +1225,7 @@ fetch('https://lin-statesville-etru-dash-proxy.onrender.com/proxy-submeter', {
 // ✅ NEW: Function to fetch and display daily consumption
 function fetchDailyConsumption(startDateStr, endDateStr) {
   const dailyConsumptionQuery = `
-    query($from: String!, $to: String!) {
+    query dailySubConsumpion($from: String!, $to: String!) {
       submeters {
         usage(
           from: $from
@@ -1238,7 +1421,7 @@ document.getElementById('exportSessionsButton').addEventListener('click', async 
 
     // Fetch all metering sessions
     const sessionsQuery = `
-      query($filter: SubmeterSessionFilter) {
+      query submeterSessions2($filter: SubmeterSessionFilter) {
         submeterSessions(filter: $filter) {
           nodes {
             associatedCustomer {
@@ -1320,7 +1503,7 @@ async function fetchMetricsForExport(startDateStr, endDateStr) {
   const isoEnd = endDateStr;
 
   const trailerQuery = `
-    query($filter: TrailerAppointmentFilter, $parkSessionFilter: ParkSessionFilter) {
+    query trailerApptsParkSess($filter: TrailerAppointmentFilter, $parkSessionFilter: ParkSessionFilter) {
       trailerAppointments(filter: $filter) {
         nodes {
           checkinTime
@@ -1444,52 +1627,55 @@ async function fetchMetricsForExport(startDateStr, endDateStr) {
     const facilityData = await facilityResponse.json();
     metrics.totalUsage = Math.round(facilityData?.data?.submeters?.usage?.aggregates?.SUM || 0);
 
-    // Fetch submeter sessions
-    const submeterQuery = `
-      query($filter: SubmeterSessionFilter) {
-        submeterSessions(filter: $filter) {
-          nodes {
-            id
-            startTime
-            endTime
-            usage { aggregates { SUM } }
-          }
-        }
+   // Fetch submeter sessions
+const submeterQuery = `
+  query($filter: SubmeterSessionFilter) {
+    submeterSessions(filter: $filter) {
+      totalCount
+      nodes {
+        id
+        startTime
+        endTime
+        usage { aggregates { SUM } }
       }
-    `;
+    }
+  }
+`;
 
-    const submeterResponse = await fetch('https://lin-statesville-etru-dash-proxy.onrender.com/proxy-submeter', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        query: submeterQuery,
-        variables: {
-          filter: {
-            startTime: { greaterThanOrEqualTo: isoStart, lessThanOrEqualTo: isoEnd }
-          }
-        }
-      })
-    });
-
-    const submeterData = await submeterResponse.json();
-    const sessions = submeterData?.data?.submeterSessions?.nodes || [];
-
-    let totalDurationMs = 0;
-    let totalAssignedUsage = 0;
-
-    sessions.forEach(s => {
-      if (s.startTime && s.endTime) {
-        totalDurationMs += (new Date(s.endTime) - new Date(s.startTime));
+const submeterResponse = await fetch('https://lin-statesville-etru-dash-proxy.onrender.com/proxy-submeter', {
+  method: 'POST',
+  headers: { 'Content-Type': 'application/json' },
+  body: JSON.stringify({
+    query: submeterQuery,
+    variables: {
+      filter: {
+        startTime: { greaterThanOrEqualTo: isoStart, lessThanOrEqualTo: isoEnd }
       }
-      totalAssignedUsage += s.usage?.aggregates?.SUM || 0;
-    });
+    }
+  })
+});
 
-    metrics.totalChargingTime = Math.round(totalDurationMs / (1000 * 60 * 60));
-    metrics.totalAssignedUsage = Math.round(totalAssignedUsage);
-    metrics.totalUnassignedUsage = Math.max(0, metrics.totalUsage - metrics.totalAssignedUsage);
-    metrics.chargingPercent = totalParkMs
-      ? Math.round((totalDurationMs / totalParkMs) * 100)
-      : 0;
+const submeterData = await submeterResponse.json();
+const sessions = submeterData?.data?.submeterSessions?.nodes || [];
+const totalSessionCount = submeterData?.data?.submeterSessions?.totalCount || 0;
+
+let totalDurationMs = 0;
+let totalAssignedUsage = 0;
+
+sessions.forEach(s => {
+  if (s.startTime && s.endTime) {
+    totalDurationMs += (new Date(s.endTime) - new Date(s.startTime));
+  }
+  totalAssignedUsage += s.usage?.aggregates?.SUM || 0;
+});
+
+metrics.totalChargingTime = Math.round(totalDurationMs / (1000 * 60 * 60));
+metrics.numberOfSessions = totalSessionCount;
+metrics.averageSessionDuration = totalSessionCount > 0 
+  ? (totalDurationMs / (1000 * 60 * 60)) / totalSessionCount 
+  : 0;
+metrics.totalAssignedUsage = Math.round(totalAssignedUsage);
+metrics.totalUnassignedUsage = Math.max(0, metrics.totalUsage - metrics.totalAssignedUsage);
 
   } catch (error) {
     console.error('Error fetching metrics for export:', error);
@@ -1507,6 +1693,8 @@ function generateCSV(data) {
     'eTRU Missed Assignments',
     'eTRU Assignment Rate %',
     'Total Time in eTRU Spaces (hrs)',
+    'Number of Sessions',
+    'Average Session Duration (hrs)',
     'Total Charging Time (hrs)',
     'Charging Time % of Parked Time',
     'Total Assigned Usage (kWh)',
@@ -1521,6 +1709,8 @@ function generateCSV(data) {
     d.missedAssignments,
     d.assignmentRate,
     d.totalEtruParkTime,
+    d.numberOfSessions,
+    d.averageSessionDuration.toFixed(2),
     d.totalChargingTime,
     d.chargingPercent,
     d.totalAssignedUsage,
