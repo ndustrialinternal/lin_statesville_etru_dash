@@ -46,7 +46,7 @@
     }
 
     .dashboard-section {
-      margin: 3rem 0;
+      margin: 1rem 0;
     }
 
     .section-header {
@@ -441,14 +441,14 @@
     <!-- Submeter Status Lights -->
     <div class="submeter-status-container" id="submeterStatusContainer">
       <div style="width: 100%; font-size: 1.1rem; font-weight: 500; color: #2b2f32; margin-bottom: 0.5rem;">
-        Pedestal Powering Status
+        Submeter Status
       </div>
       <div id="submeterLights" style="display: flex; flex-wrap: wrap; gap: 0.75rem; width: 100%;">
         <!-- Lights will be populated here -->
       </div>
     </div>  
     
-    <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 1rem; margin-top: 1rem;">
+    <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 0.5rem; margin-top: 0.5rem;">
       <h1 style="margin: 0;">Lineage - Statesville eTRU Metrics</h1>
       <div style="position: relative;">
         <button id="exportDropdownButton" class="export-button" style="display: flex; align-items: center; gap: 0.5rem;">
@@ -466,11 +466,11 @@
       </div>
     </div>
 
-    <div class="facilitySelectorCommonComponent" style="margin-bottom: 1rem;">
+    <div class="facilitySelectorCommonComponent" style="margin-bottom: 0.5rem;">
       <label for="dateRange">Date Range:</label>
       <select id="dateRange" style="padding: 0.5rem; font-size: 1rem; border-radius: 6px; border: 1px solid #dbe2ea;">
-        <option value="last-month">Last Month</option>
         <option value="this-month">This Month</option>
+        <option value="last-month">Last Month</option>
         <option value="last-7-days">Last 7 Days</option>
         <option value="last-30-days">Last 30 Days</option>
         <option value="last-90-days">Last 90 Days</option>
@@ -682,6 +682,36 @@
   // Store raw data for modal charts
   let rawMetricData = {};
 
+  // Restore saved date range selection on page load
+  function restoreDateRangeSelection() {
+    const savedRange = localStorage.getItem('etru_dateRange');
+    const savedCustomStart = localStorage.getItem('etru_customStart');
+    const savedCustomEnd = localStorage.getItem('etru_customEnd');
+    
+    if (savedRange) {
+      dateRangeSelect.value = savedRange;
+      
+      if (savedRange === 'custom' && savedCustomStart && savedCustomEnd) {
+        customDateInputs.style.display = 'inline-block';
+        customStartInput.value = savedCustomStart;
+        customEndInput.value = savedCustomEnd;
+      }
+    }
+  }
+
+  // Save date range selection to localStorage
+  function saveDateRangeSelection() {
+    localStorage.setItem('etru_dateRange', dateRangeSelect.value);
+    
+    if (dateRangeSelect.value === 'custom') {
+      localStorage.setItem('etru_customStart', customStartInput.value);
+      localStorage.setItem('etru_customEnd', customEndInput.value);
+    }
+  }
+
+  // Call restore on page load
+  restoreDateRangeSelection();
+
   // Modal functionality
   const modal = document.getElementById('metricModal');
   const modalTitle = document.getElementById('modalTitle');
@@ -802,6 +832,7 @@
       }
     } else {
       customDateInputs.style.display = 'none';
+      saveDateRangeSelection();
       updateFilters();
     }
   });
@@ -811,10 +842,12 @@
     if (customEndInput.value && customEndInput.value < customStartInput.value) {
       customEndInput.value = customStartInput.value;
     }
+    saveDateRangeSelection();
     updateFilters();
   });
 
   customEndInput.addEventListener('change', () => {
+    saveDateRangeSelection();
     updateFilters();
   });
 
