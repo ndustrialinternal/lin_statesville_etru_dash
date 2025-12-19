@@ -206,7 +206,7 @@
       flex-wrap: wrap;
       gap: 0.75rem;
       margin: 2rem 0;
-      padding: 1.5rem;
+      padding: 1rem;
       background: #f5f6f6;
       border-radius: 12px;
       border: 1px solid #dbe2ea;
@@ -440,9 +440,7 @@
   <div class="dashboard-container">
     <!-- Submeter Status Lights -->
     <div class="submeter-status-container" id="submeterStatusContainer">
-      <div style="width: 100%; font-size: 1.1rem; font-weight: 500; color: #2b2f32; margin-bottom: 0.5rem;">
-        Submeter Status
-      </div>
+        Pedestal Status
       <div id="submeterLights" style="display: flex; flex-wrap: wrap; gap: 0.75rem; width: 100%;">
         <!-- Lights will be populated here -->
       </div>
@@ -569,7 +567,7 @@
             <h2>Assigned Charging Time</h2>
             <span class="info-icon">
               i
-              <span class="info-tooltip">Total hours that charging sessions were associated with a specific customer during the selected period.</span>
+              <span class="info-tooltip">Total hours that charging sessions were associated with a specific customer during the selected period. Excludes sessions with 0 usage or duration less than 2 minutes.</span>
             </span>
           </div>
           <div class="value" id="assignedChargingTime">Loading...</div>
@@ -579,7 +577,7 @@
             <h2>Unassigned Charging Time</h2>
             <span class="info-icon">
               i
-              <span class="info-tooltip">Total hours of charging sessions that could not be attributed to a specific customer.</span>
+              <span class="info-tooltip">Total hours of charging sessions that could not be attributed to a specific customer. Excludes sessions with 0 usage or duration less than 2 minutes.</span>
             </span>
           </div>
           <div class="value" id="unassignedChargingTime">Loading...</div>
@@ -589,7 +587,7 @@
             <h2>Total Charging Time</h2>
             <span class="info-icon">
               i
-              <span class="info-tooltip">Combined total of all charging session hours, both assigned and unassigned, during the selected period.</span>
+              <span class="info-tooltip">Combined total of all charging session hours, both assigned and unassigned, during the selected period. Excludes sessions with 0 usage or duration less than 2 minutes.</span>
             </span>
           </div>
           <div class="value" id="totalChargingTime">Loading...</div>
@@ -606,7 +604,7 @@
             <h2>Number of Sessions</h2>
             <span class="info-icon">
               i
-              <span class="info-tooltip">Total number of charging sessions recorded during the selected period.</span>
+              <span class="info-tooltip">Total number of charging sessions recorded during the selected period. Excludes sessions with 0 usage or duration less than 2 minutes.</span>
             </span>
           </div>
           <div class="value" id="numberOfSessions">Loading...</div>
@@ -616,7 +614,7 @@
             <h2>Average Session Duration</h2>
             <span class="info-icon">
               i
-              <span class="info-tooltip">Average length of charging sessions, calculated as Total Charging Time divided by Number of Sessions.</span>
+              <span class="info-tooltip">Average length of charging sessions, calculated as Total Charging Time divided by Number of Sessions. Excludes sessions with 0 usage or duration less than 2 minutes.</span>
             </span>
           </div>
           <div class="value" id="averageSessionDuration">Loading...</div>
@@ -1510,8 +1508,23 @@
     })
     .then(res => res.json())
     .then(async data => {
-      const sessions = data?.data?.submeterSessions?.nodes || [];
-      const totalSessionCount = data?.data?.submeterSessions?.totalCount || 0;
+      const allSessions = data?.data?.submeterSessions?.nodes || [];
+      
+      // Filter out sessions with 0 usage or duration < 2 minutes
+      const sessions = allSessions.filter(s => {
+        const usage = s.usage?.aggregates?.SUM || 0;
+        if (usage === 0) return false;
+        
+        if (s.startTime && s.endTime) {
+          const durationMs = new Date(s.endTime) - new Date(s.startTime);
+          const durationMinutes = durationMs / (1000 * 60);
+          if (durationMinutes < 2) return false;
+        }
+        
+        return true;
+      });
+      
+      const totalSessionCount = sessions.length;
 
       let assignedDurationMs = 0;
       let unassignedDurationMs = 0;
@@ -1770,8 +1783,23 @@
       });
       
       const submeterData = await submeterResponse.json();
-      const sessions = submeterData?.data?.submeterSessions?.nodes || [];
-      const totalSessionCount = submeterData?.data?.submeterSessions?.totalCount || 0;
+      const allSessions = submeterData?.data?.submeterSessions?.nodes || [];
+      
+      // Apply session filters
+      const sessions = allSessions.filter(s => {
+        const usage = s.usage?.aggregates?.SUM || 0;
+        if (usage === 0) return false;
+        
+        if (s.startTime && s.endTime) {
+          const durationMs = new Date(s.endTime) - new Date(s.startTime);
+          const durationMinutes = durationMs / (1000 * 60);
+          if (durationMinutes < 2) return false;
+        }
+        
+        return true;
+      });
+      
+      const totalSessionCount = sessions.length;
       
       // Fetch facility usage
       const facilityUsageQuery = `
@@ -1866,6 +1894,7 @@
         ['Lineage - Statesville eTRU KPIs'],
         ['Period', `${isoStart} to ${isoEnd}`],
         ['Generated', new Date().toLocaleString()],
+        ['Note', 'Sessions exclude those with 0 usage or duration < 2 minutes'],
         [],
         ['Metric', 'Value'],
         ['Total Trailers', totalTrailers],
@@ -1948,10 +1977,24 @@
       });
       
       const data = await response.json();
-      const sessions = data?.data?.submeterSessions?.nodes || [];
+      const allSessions = data?.data?.submeterSessions?.nodes || [];
+      
+      // Apply the same filters as in the dashboard
+      const sessions = allSessions.filter(s => {
+        const usage = s.usage?.aggregates?.SUM || 0;
+        if (usage === 0) return false;
+        
+        if (s.startTime && s.endTime) {
+          const durationMs = new Date(s.endTime) - new Date(s.startTime);
+          const durationMinutes = durationMs / (1000 * 60);
+          if (durationMinutes < 2) return false;
+        }
+        
+        return true;
+      });
       
       if (sessions.length === 0) {
-        alert('No sessions found for the selected period.');
+        alert('No sessions found for the selected period (after filtering).');
         loadingOverlay.classList.remove('active');
         return;
       }
