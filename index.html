@@ -1979,19 +1979,31 @@
       const data = await response.json();
       const allSessions = data?.data?.submeterSessions?.nodes || [];
       
-      // Apply the same filters as in the dashboard
-      const sessions = allSessions.filter(s => {
-        const usage = s.usage?.aggregates?.SUM || 0;
-        if (usage === 0) return false;
-        
-        if (s.startTime && s.endTime) {
-          const durationMs = new Date(s.endTime) - new Date(s.startTime);
-          const durationMinutes = durationMs / (1000 * 60);
-          if (durationMinutes < 2) return false;
-        }
-        
-        return true;
-      });
+/// Apply filters for CSV export
+const sessions = allSessions.filter(s => {
+  const rawUsage = s.usage?.aggregates?.SUM || 0;
+  const roundedUsage = Math.round(rawUsage);
+  const isAssigned = s.associatedCustomerId !== null;
+  
+  // Exclude unassigned sessions with 0 or 1 usage (after rounding)
+  if (!isAssigned && roundedUsage <= 1) {
+    return false;
+  }
+  
+  // Exclude assigned sessions with 0 usage (after rounding)
+  if (isAssigned && roundedUsage === 0) {
+    return false;
+  }
+  
+  // Apply duration filter (< 2 minutes)
+  if (s.startTime && s.endTime) {
+    const durationMs = new Date(s.endTime) - new Date(s.startTime);
+    const durationMinutes = durationMs / (1000 * 60);
+    if (durationMinutes < 2) return false;
+  }
+  
+  return true;
+});
       
       if (sessions.length === 0) {
         alert('No sessions found for the selected period (after filtering).');
