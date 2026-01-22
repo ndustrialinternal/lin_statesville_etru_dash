@@ -1978,61 +1978,116 @@
       
       const data = await response.json();
       const allSessions = data?.data?.submeterSessions?.nodes || [];
-      
+
 /// Apply filters for CSV export
 const sessions = allSessions.filter(s => {
   const rawUsage = s.usage?.aggregates?.SUM || 0;
   const roundedUsage = Math.round(rawUsage);
   const isAssigned = s.associatedCustomerId !== null;
-  
+
   // Exclude unassigned sessions with 0 or 1 usage (after rounding)
   if (!isAssigned && roundedUsage <= 1) {
     return false;
   }
-  
+
   // Exclude assigned sessions with 0 usage (after rounding)
   if (isAssigned && roundedUsage === 0) {
     return false;
   }
-  
+
   // Apply duration filter (< 2 minutes)
   if (s.startTime && s.endTime) {
     const durationMs = new Date(s.endTime) - new Date(s.startTime);
     const durationMinutes = durationMs / (1000 * 60);
     if (durationMinutes < 2) return false;
   }
-  
+
   return true;
 });
-      
+
       if (sessions.length === 0) {
         alert('No sessions found for the selected period (after filtering).');
         loadingOverlay.classList.remove('active');
         return;
       }
-      
+
+      // Group sessions by submeter and sort by start time
+      const sessionsBySubmeter = {};
+      sessions.forEach(session => {
+        const submeterLabel = session.submeter?.label || 'Unknown';
+        if (!sessionsBySubmeter[submeterLabel]) {
+          sessionsBySubmeter[submeterLabel] = [];
+        }
+        sessionsBySubmeter[submeterLabel].push(session);
+      });
+
+      // Sort each submeter's sessions by start time
+      Object.keys(sessionsBySubmeter).forEach(submeter => {
+        sessionsBySubmeter[submeter].sort((a, b) => {
+          return new Date(a.startTime) - new Date(b.startTime);
+        });
+      });
+
+      // Aggregate sessions within 1 hour for the same submeter
+      const aggregatedSessions = [];
+
+      Object.keys(sessionsBySubmeter).forEach(submeter => {
+        const submeterSessions = sessionsBySubmeter[submeter];
+
+        let i = 0;
+        while (i < submeterSessions.length) {
+          let aggregated = {
+            ids: [submeterSessions[i].id],
+            submeter: submeter,
+            startTime: submeterSessions[i].startTime,
+            endTime: submeterSessions[i].endTime,
+            customer: submeterSessions[i].associatedCustomer?.name || 'Unassigned',
+            usage: submeterSessions[i].usage?.aggregates?.SUM || 0
+          };
+
+          // Look ahead for sessions within 1 hour
+          let j = i + 1;
+          while (j < submeterSessions.length) {
+            const currentEndTime = new Date(aggregated.endTime);
+            const nextStartTime = new Date(submeterSessions[j].startTime);
+            const timeDiffMs = nextStartTime - currentEndTime;
+            const timeDiffHours = timeDiffMs / (1000 * 60 * 60);
+
+            // If next session starts within 1 hour of current end time, aggregate it
+            if (timeDiffHours <= 1) {
+              aggregated.ids.push(submeterSessions[j].id);
+              aggregated.endTime = submeterSessions[j].endTime;
+              aggregated.usage += submeterSessions[j].usage?.aggregates?.SUM || 0;
+              j++;
+            } else {
+              break;
+            }
+          }
+
+          aggregatedSessions.push(aggregated);
+          i = j;
+        }
+      });
+
       // Create CSV header
       const csvRows = [
-        ['Session ID', 'Submeter', 'Start Time', 'End Time', 'Duration (hours)', 'Customer', 'Usage (kWh)']
+        ['Submeter', 'Start Time', 'End Time', 'Duration (hours)', 'Customer', 'Usage (kWh)']
       ];
-      
-      sessions.forEach(session => {
+
+      aggregatedSessions.forEach(session => {
         const startTime = session.startTime || '';
         const endTime = session.endTime || '';
-        const durationHours = (startTime && endTime) 
+        const durationHours = (startTime && endTime)
           ? ((new Date(endTime) - new Date(startTime)) / (1000 * 60 * 60)).toFixed(2)
           : '';
-        const customer = session.associatedCustomer?.name || 'Unassigned';
-        const usage = session.usage?.aggregates?.SUM ? Math.round(session.usage.aggregates.SUM) : 0;
-        const submeter = session.submeter?.label || 'Unknown';
-        
+        const usage = Math.round(session.usage);
+
         csvRows.push([
-          session.id,
-          submeter,
+          session.submeter,
           startTime,
           endTime,
           durationHours,
-          customer,
+          session.customer,
           usage
         ]);
       });
