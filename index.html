@@ -604,7 +604,7 @@
             <h2>Number of Sessions</h2>
             <span class="info-icon">
               i
-              <span class="info-tooltip">Total number of charging sessions recorded during the selected period. Excludes sessions with 0 usage or duration less than 2 minutes.</span>
+              <span class="info-tooltip">Total number of charging sessions recorded during the selected period. Sessions for the same submeter within 1 hour are counted as one session. Excludes sessions with 0 usage or duration less than 2 minutes.</span>
             </span>
           </div>
           <div class="value" id="numberOfSessions">Loading...</div>
@@ -1489,6 +1489,9 @@
             endTime
             associatedCustomerId
             usage { aggregates { SUM } }
+            submeter {
+              label
+            }
           }
         }
       }
@@ -1514,17 +1517,66 @@
       const sessions = allSessions.filter(s => {
         const usage = s.usage?.aggregates?.SUM || 0;
         if (usage === 0) return false;
-        
+
         if (s.startTime && s.endTime) {
           const durationMs = new Date(s.endTime) - new Date(s.startTime);
           const durationMinutes = durationMs / (1000 * 60);
           if (durationMinutes < 2) return false;
         }
-        
+
         return true;
       });
-      
-      const totalSessionCount = sessions.length;
+
+      // Apply aggregation logic to count sessions
+      // Group sessions by submeter and sort by start time
+      const sessionsBySubmeter = {};
+      sessions.forEach(session => {
+        const submeterLabel = session.submeter?.label || 'Unknown';
+        if (!sessionsBySubmeter[submeterLabel]) {
+          sessionsBySubmeter[submeterLabel] = [];
+        }
+        sessionsBySubmeter[submeterLabel].push(session);
+      });
+
+      // Sort each submeter's sessions by start time
+      Object.keys(sessionsBySubmeter).forEach(submeter => {
+        sessionsBySubmeter[submeter].sort((a, b) => {
+          return new Date(a.startTime) - new Date(b.startTime);
+        });
+      });
+
+      // Count aggregated sessions (sessions within 1 hour for the same submeter)
+      let aggregatedSessionCount = 0;
+
+      Object.keys(sessionsBySubmeter).forEach(submeter => {
+        const submeterSessions = sessionsBySubmeter[submeter];
+
+        let i = 0;
+        while (i < submeterSessions.length) {
+          let currentEndTime = submeterSessions[i].endTime;
+
+          // Look ahead for sessions within 1 hour
+          let j = i + 1;
+          while (j < submeterSessions.length) {
+            const nextStartTime = new Date(submeterSessions[j].startTime);
+            const timeDiffMs = nextStartTime - new Date(currentEndTime);
+            const timeDiffHours = timeDiffMs / (1000 * 60 * 60);
+
+            // If next session starts within 1 hour of current end time, consider it part of the same aggregated session
+            if (timeDiffHours <= 1) {
+              currentEndTime = submeterSessions[j].endTime;
+              j++;
+            } else {
+              break;
+            }
+          }
+
+          aggregatedSessionCount++;
+          i = j;
+        }
+      });
+
+      const totalSessionCount = aggregatedSessionCount;
 
       let assignedDurationMs = 0;
       let unassignedDurationMs = 0;
@@ -1591,23 +1643,23 @@
       const assignedTimeBuckets = sessionBuckets.map(b => ({ ...b, hours: 0 }));
       const unassignedTimeBuckets = sessionBuckets.map(b => ({ ...b, hours: 0 }));
       const totalTimeBuckets = sessionBuckets.map(b => ({ ...b, hours: 0 }));
-      const sessionCountBuckets = sessionBuckets.map(b => ({ ...b, count: 0 }));
+      const sessionCountBuckets = sessionBuckets.map(b => ({ ...b, count: 0, sessions: [] }));
       const assignedUsageBuckets = sessionBuckets.map(b => ({ ...b, kwh: 0 }));
       const unassignedUsageBuckets = sessionBuckets.map(b => ({ ...b, kwh: 0 }));
 
       sessions.forEach(s => {
         const endTime = s.endTime ? new Date(s.endTime) : null;
         if (!endTime) return;
-        
+
         let bucketIndex = -1;
-        
+
         for (let i = 0; i < sessionBuckets.length; i++) {
           const bucket = sessionBuckets[i];
-          
+
           if (sessionBucketSize === 'day') {
             const endDateOnly = new Date(endTime.getFullYear(), endTime.getMonth(), endTime.getDate());
             const bucketDateOnly = new Date(bucket.start.getFullYear(), bucket.start.getMonth(), bucket.start.getDate());
-            
+
             if (endDateOnly.getTime() === bucketDateOnly.getTime()) {
               bucketIndex = i;
               break;
@@ -1616,16 +1668,16 @@
             const dayStart = new Date(bucket.start);
             const dayEnd = new Date(bucket.end);
             dayEnd.setHours(23, 59, 59, 999);
-            
+
             if (endTime >= dayStart && endTime <= dayEnd) {
               bucketIndex = i;
               break;
             }
           }
         }
-        
+
         if (bucketIndex !== -1) {
-          sessionCountBuckets[bucketIndex].count++;
+          sessionCountBuckets[bucketIndex].sessions.push(s);
           
           if (s.startTime && s.endTime) {
             const durationHours = (new Date(s.endTime) - new Date(s.startTime)) / (1000 * 60 * 60);
@@ -1661,6 +1713,52 @@
         labels: totalTimeBuckets.map(b => b.label),
         values: totalTimeBuckets.map(b => Math.round(b.hours))
       };
+
+      // Apply aggregation logic to count sessions in each bucket
+      sessionCountBuckets.forEach(bucket => {
+        const bucketSessions = bucket.sessions;
+
+        // Group by submeter
+        const bySubmeter = {};
+        bucketSessions.forEach(session => {
+          const submeterLabel = session.submeter?.label || 'Unknown';
+          if (!bySubmeter[submeterLabel]) {
+            bySubmeter[submeterLabel] = [];
+          }
+          bySubmeter[submeterLabel].push(session);
+        });
+
+        // Sort and count aggregated sessions for each submeter
+        let aggregatedCount = 0;
+        Object.keys(bySubmeter).forEach(submeter => {
+          const submeterSessions = bySubmeter[submeter];
+          submeterSessions.sort((a, b) => new Date(a.startTime) - new Date(b.startTime));
+
+          let i = 0;
+          while (i < submeterSessions.length) {
+            let currentEndTime = submeterSessions[i].endTime;
+
+            let j = i + 1;
+            while (j < submeterSessions.length) {
+              const nextStartTime = new Date(submeterSessions[j].startTime);
+              const timeDiffMs = nextStartTime - new Date(currentEndTime);
+              const timeDiffHours = timeDiffMs / (1000 * 60 * 60);
+
+              if (timeDiffHours <= 1) {
+                currentEndTime = submeterSessions[j].endTime;
+                j++;
+              } else {
+                break;
+              }
+            }
+
+            aggregatedCount++;
+            i = j;
+          }
+        });
+
+        bucket.count = aggregatedCount;
+      });
 
       rawMetricData.numberOfSessions = {
         labels: sessionCountBuckets.map(b => b.label),
